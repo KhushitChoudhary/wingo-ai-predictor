@@ -1576,12 +1576,20 @@ app.get(
 
 async function fetchSourceResults() {
   try {
-    console.log(
-      "Fetching WinGo results..."
-    );
+    console.log("Fetching WinGo results...");
 
-    const response =
-      await fetch(SOURCE_API);
+    const url = `${SOURCE_API}?t=${Date.now()}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+        Accept: "application/json,text/plain,*/*",
+        Referer: "https://draw.ar-lottery01.com/",
+        Origin: "https://draw.ar-lottery01.com"
+      }
+    });
 
     if (!response.ok) {
       throw new Error(
@@ -1589,12 +1597,9 @@ async function fetchSourceResults() {
       );
     }
 
-    const json =
-      await response.json();
+    const json = await response.json();
 
-    console.log(
-      "Source response received"
-    );
+    console.log("Source response received");
 
     const list =
       json?.data?.list ||
@@ -1602,9 +1607,7 @@ async function fetchSourceResults() {
       json?.list ||
       [];
 
-    console.log(
-      `Received ${list.length} results`
-    );
+    console.log(`Received ${list.length} results`);
 
     return list;
   } catch (error) {
