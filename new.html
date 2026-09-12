@@ -1,0 +1,1263 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>WinGo AI Predictor</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body {
+      background: #f5f3ff;
+      color: #15152b;
+      min-height: 100vh;
+    }
+
+    /* ================= HEADER ================= */
+
+    .header {
+      background: #17132f;
+      color: white;
+      padding: 18px 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .logo span {
+      color: #8b6cff;
+    }
+
+    .live {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #d8d2ff;
+    }
+
+    .live-dot {
+      width: 9px;
+      height: 9px;
+      background: #35d07f;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #35d07f;
+    }
+
+    /* ================= MAIN ================= */
+
+    .container {
+      width: min(1100px, 94%);
+      margin: 30px auto;
+    }
+
+    .page-title {
+      margin-bottom: 25px;
+    }
+
+    .page-title h1 {
+      font-size: 30px;
+      margin-bottom: 6px;
+    }
+
+    .page-title p {
+      color: #77728d;
+      font-size: 14px;
+    }
+
+    /* ================= ERROR ================= */
+
+    .error-box {
+      display: none;
+      background: #ffe9e9;
+      color: #c62828;
+      padding: 14px 18px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ffc7c7;
+    }
+
+    /* ================= TOP GRID ================= */
+
+    .top-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 22px;
+      margin-bottom: 22px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 25px;
+      box-shadow: 0 8px 30px rgba(70, 50, 130, 0.08);
+      border: 1px solid #eeeafd;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #817b99;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 20px;
+    }
+
+    /* ================= PREDICTION ================= */
+
+    .prediction-card {
+      text-align: center;
+    }
+
+    .next-issue-label {
+      color: #817b99;
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+
+    .next-issue {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 25px;
+      word-break: break-all;
+    }
+
+    .prediction-label {
+      color: #817b99;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .prediction {
+      font-size: 58px;
+      font-weight: 900;
+      margin: 5px 0 12px;
+      letter-spacing: 1px;
+    }
+
+    .prediction.big {
+      color: #6751d9;
+    }
+
+    .prediction.small {
+      color: #e45b72;
+    }
+
+    .model-score {
+      display: inline-block;
+      background: #f1eeff;
+      color: #6751d9;
+      padding: 8px 15px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 25px;
+    }
+
+    /* ================= PROBABILITY ================= */
+
+    .probability-row {
+      margin-bottom: 18px;
+    }
+
+    .probability-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 7px;
+    }
+
+    .progress {
+      width: 100%;
+      height: 10px;
+      background: #eeeef5;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 20px;
+      transition: width 0.5s ease;
+    }
+
+    .big-bar {
+      background: #6751d9;
+    }
+
+    .small-bar {
+      background: #e45b72;
+    }
+
+    /* ================= COUNTDOWN ================= */
+
+    .countdown-card {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .countdown-title {
+      color: #817b99;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .countdown {
+      font-size: 64px;
+      font-weight: 900;
+      color: #6751d9;
+      letter-spacing: 2px;
+    }
+
+    .countdown-subtitle {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #9993aa;
+    }
+
+    /* ================= STATS ================= */
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-bottom: 22px;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 15px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 8px 25px rgba(70, 50, 130, 0.06);
+      border: 1px solid #eeeafd;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 900;
+      margin-bottom: 5px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #898399;
+      text-transform: uppercase;
+    }
+
+    .win-value {
+      color: #28a66a;
+    }
+
+    .loss-value {
+      color: #e05268;
+    }
+
+    .pending-value {
+      color: #d99b22;
+    }
+
+    .rate-value {
+      color: #6751d9;
+    }
+
+    /* ================= HISTORY ================= */
+
+    .history-card {
+      padding: 25px;
+    }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .history-header h2 {
+      font-size: 20px;
+    }
+
+    .history-header span {
+      color: #817b99;
+      font-size: 13px;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 650px;
+    }
+
+    th {
+      background: #f7f5ff;
+      color: #77718c;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 13px 12px;
+      text-align: left;
+    }
+
+    td {
+      padding: 15px 12px;
+      border-bottom: 1px solid #f0eef6;
+      font-size: 13px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .issue {
+      font-weight: 700;
+      color: #39334f;
+    }
+
+    .prediction-badge,
+    .actual-badge,
+    .status-badge {
+      display: inline-block;
+      padding: 6px 11px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .badge-big {
+      background: #eeeaff;
+      color: #6751d9;
+    }
+
+    .badge-small {
+      background: #ffe9ee;
+      color: #d74e68;
+    }
+
+    .status-win {
+      background: #e5f8ee;
+      color: #23945d;
+    }
+
+    .status-loss {
+      background: #ffe7ea;
+      color: #d13f58;
+    }
+
+    .status-pending {
+      background: #fff3d9;
+      color: #b27a12;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 30px;
+      color: #9993aa;
+    }
+
+    /* ================= FOOTER ================= */
+
+    .footer {
+      text-align: center;
+      padding: 25px;
+      color: #9690a5;
+      font-size: 12px;
+    }
+
+    /* ================= RESPONSIVE ================= */
+
+    @media (max-width: 800px) {
+
+      .top-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .header {
+        padding: 16px 18px;
+      }
+
+      .container {
+        width: 92%;
+      }
+
+      .prediction {
+        font-size: 48px;
+      }
+
+      .countdown {
+        font-size: 52px;
+      }
+    }
+
+    @media (max-width: 480px) {
+
+      .page-title h1 {
+        font-size: 25px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      .stats-grid {
+        gap: 10px;
+      }
+
+      .stat-card {
+        padding: 15px 8px;
+      }
+
+      .stat-value {
+        font-size: 23px;
+      }
+
+      .stat-label {
+        font-size: 10px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ================= HEADER ================= -->
+
+  <header class="header">
+
+    <div class="logo">
+      WinGo <span>AI Predictor</span>
+    </div>
+
+    <div class="live">
+      <span class="live-dot"></span>
+      LIVE
+    </div>
+
+  </header>
+
+  <!-- ================= MAIN ================= -->
+
+  <main class="container">
+
+    <div class="page-title">
+      <h1>AI Prediction Dashboard</h1>
+
+    </div>
+
+
+    <!-- ERROR -->
+
+    <div id="errorBox" class="error-box"></div>
+
+    <!-- ================= TOP ================= -->
+
+    <section class="top-grid">
+
+      <!-- Prediction -->
+
+      <div class="card prediction-card">
+
+        <div class="card-title">
+          Next Prediction
+        </div>
+
+        <div class="next-issue-label">
+          Next Issue
+        </div>
+
+        <div id="nextIssue" class="next-issue">
+          Loading...
+        </div>
+
+        <div class="prediction-label">
+          Predicted Result
+        </div>
+
+        <div id="prediction" class="prediction">
+          --
+        </div>
+
+        <div id="confidence" class="model-score">
+          Model Score: --%
+        </div>
+
+        <!-- BIG -->
+
+        <div class="probability-row">
+
+          <div class="probability-head">
+            <span>BIG</span>
+            <span id="bigProbability">--%</span>
+          </div>
+
+          <div class="progress">
+            <div
+              id="bigBar"
+              class="bar-fill big-bar">
+            </div>
+          </div>
+
+        </div>
+
+
+        <!-- SMALL -->
+
+        <div class="probability-row">
+
+          <div class="probability-head">
+            <span>SMALL</span>
+            <span id="smallProbability">--%</span>
+          </div>
+
+          <div class="progress">
+            <div
+              id="smallBar"
+              class="bar-fill small-bar">
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <!-- Countdown -->
+
+      <div class="card countdown-card">
+
+        <div class="card-title">
+          Round Timer
+        </div>
+
+        <div class="countdown-title">
+          Time Remaining
+        </div>
+
+        <div id="countdown" class="countdown">
+          01:00
+        </div>
+
+        <div class="countdown-subtitle">
+          Next round countdown
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ================= STATS ================= -->
+
+    <section class="stats-grid">
+
+      <div class="stat-card">
+        <div
+          id="wins"
+          class="stat-value win-value">
+          0
+        </div>
+
+        <div class="stat-label">
+          Wins
+        </div>
+      </div>
+
+
+      <div class="stat-card">
+        <div
+          id="losses"
+          class="stat-value loss-value">
+          0
+        </div>
+
+        <div class="stat-label">
+          Losses
+        </div>
+      </div>
+
+
+      <div class="stat-card">
+        <div
+          id="pending"
+          class="stat-value pending-value">
+          0
+        </div>
+
+        <div class="stat-label">
+          Pending
+        </div>
+      </div>
+
+
+      <div class="stat-card">
+        <div
+          id="winRate"
+          class="stat-value rate-value">
+          0%
+        </div>
+
+        <div class="stat-label">
+          Win Rate
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ================= HISTORY ================= -->
+
+    <section class="card history-card">
+
+      <div class="history-header">
+
+        <h2>
+          Prediction History
+        </h2>
+
+        <span>
+          Last 10 predictions
+        </span>
+
+      </div>
+
+
+      <div class="table-wrapper">
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th>Issue</th>
+              <th>Prediction</th>
+              <th>Actual</th>
+              <th>Confidence</th>
+              <th>Status</th>
+            </tr>
+
+          </thead>
+
+          <tbody id="historyTable">
+
+            <tr>
+              <td
+                colspan="5"
+                class="empty">
+                Loading prediction history...
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <!-- ================= FOOTER ================= -->
+
+  <footer class="footer">
+    WinGo AI Predictor • Experimental pattern analysis
+  </footer>
+
+
+  <!-- ================= JAVASCRIPT ================= -->
+
+  <script>
+
+    /* =========================================
+       API CONFIG
+    ========================================= */
+
+    const API_BASE =
+      "";
+
+
+    /* =========================================
+       ELEMENTS
+    ========================================= */
+
+    const predictionEl =
+      document.getElementById("prediction");
+
+    const confidenceEl =
+      document.getElementById("confidence");
+
+    const nextIssueEl =
+      document.getElementById("nextIssue");
+
+    const bigProbabilityEl =
+      document.getElementById("bigProbability");
+
+    const smallProbabilityEl =
+      document.getElementById("smallProbability");
+
+    const bigBarEl =
+      document.getElementById("bigBar");
+
+    const smallBarEl =
+      document.getElementById("smallBar");
+
+    const countdownEl =
+      document.getElementById("countdown");
+
+    const historyTableEl =
+      document.getElementById("historyTable");
+
+    const winsEl =
+      document.getElementById("wins");
+
+    const lossesEl =
+      document.getElementById("losses");
+
+    const pendingEl =
+      document.getElementById("pending");
+
+    const winRateEl =
+      document.getElementById("winRate");
+
+    const errorBoxEl =
+      document.getElementById("errorBox");
+
+
+    /* =========================================
+       ERROR FUNCTIONS
+    ========================================= */
+
+    function showError(message) {
+
+      errorBoxEl.style.display = "block";
+
+      errorBoxEl.textContent =
+        message;
+
+    }
+
+
+    function hideError() {
+
+      errorBoxEl.style.display = "none";
+
+      errorBoxEl.textContent = "";
+
+    }
+
+
+    /* =========================================
+       LOAD CURRENT PREDICTION
+    ========================================= */
+
+    async function loadPrediction() {
+
+      try {
+
+        const response =
+          await fetch(
+            `${API_BASE}/api/predict`
+          );
+
+        if (!response.ok) {
+
+          throw new Error(
+            `Prediction API error: ${response.status}`
+          );
+
+        }
+
+        const data =
+          await response.json();
+
+        console.log(
+          "Prediction API Response:",
+          data
+        );
+
+
+        /*
+          IMPORTANT:
+
+          Tumhare current backend ka response
+          direct prediction object hai.
+
+          Example:
+
+          {
+            prediction: "SMALL",
+            confidence: 53,
+            bigProbability: 46.62,
+            smallProbability: 53.38
+          }
+
+          Isliye:
+
+          const p = data;
+
+          NOT:
+
+          const p = data.prediction;
+        */
+
+        const p = data;
+
+
+        if (!p.prediction) {
+
+          throw new Error(
+            "Prediction data not available"
+          );
+
+        }
+
+
+        /* ==============================
+           PREDICTION
+        ============================== */
+
+        predictionEl.textContent =
+          p.prediction;
+
+
+        predictionEl.className =
+          "prediction " +
+          (
+            p.prediction === "BIG"
+              ? "big"
+              : "small"
+          );
+
+
+        /* ==============================
+           CONFIDENCE
+        ============================== */
+
+        confidenceEl.textContent =
+          `Model Score: ${p.confidence ?? 0}%`;
+
+
+        /* ==============================
+           NEXT ISSUE
+        ============================== */
+
+        if (p.nextIssue) {
+
+          nextIssueEl.textContent =
+            p.nextIssue;
+
+        } else {
+
+          nextIssueEl.textContent =
+            "Upcoming";
+
+        }
+
+
+        /* ==============================
+           PROBABILITIES
+        ============================== */
+
+        const bigProbability =
+          Number(
+            p.bigProbability ?? 0
+          );
+
+        const smallProbability =
+          Number(
+            p.smallProbability ?? 0
+          );
+
+
+        bigProbabilityEl.textContent =
+          `${bigProbability.toFixed(2)}%`;
+
+
+        smallProbabilityEl.textContent =
+          `${smallProbability.toFixed(2)}%`;
+
+
+        bigBarEl.style.width =
+          `${bigProbability}%`;
+
+
+        smallBarEl.style.width =
+          `${smallProbability}%`;
+
+
+        hideError();
+
+
+      } catch (error) {
+
+        console.error(
+          "Prediction error:",
+          error
+        );
+
+        showError(
+          `Prediction failed: ${error.message}`
+        );
+
+      }
+
+    }
+
+
+    /* =========================================
+       LOAD LAST 10 PREDICTIONS
+    ========================================= */
+
+    async function loadPredictions() {
+
+      try {
+
+        const response =
+          await fetch(
+            `${API_BASE}/api/predictions`
+          );
+
+
+        if (!response.ok) {
+
+          throw new Error(
+            `History API error: ${response.status}`
+          );
+
+        }
+
+
+        const data =
+          await response.json();
+
+
+        console.log(
+          "Prediction History:",
+          data
+        );
+
+
+        if (!data.success) {
+
+          throw new Error(
+            data.message ||
+            "Failed to load history"
+          );
+
+        }
+
+
+        const predictions =
+          Array.isArray(data.predictions)
+            ? data.predictions
+            : [];
+
+
+        /* =================================
+           STATS
+        ================================= */
+
+        const stats =
+          data.stats || {};
+
+
+        winsEl.textContent =
+          stats.wins ?? 0;
+
+
+        lossesEl.textContent =
+          stats.losses ?? 0;
+
+
+        pendingEl.textContent =
+          stats.pending ?? 0;
+
+
+        winRateEl.textContent =
+          `${stats.winRate ?? 0}%`;
+
+
+        /* =================================
+           EMPTY HISTORY
+        ================================= */
+
+        if (predictions.length === 0) {
+
+          historyTableEl.innerHTML = `
+            <tr>
+              <td
+                colspan="5"
+                class="empty">
+                No prediction history available
+              </td>
+            </tr>
+          `;
+
+          return;
+
+        }
+
+
+        /* =================================
+           TABLE
+        ================================= */
+
+        historyTableEl.innerHTML =
+          predictions
+            .map(item => {
+
+
+              const prediction =
+                item.prediction || "--";
+
+
+              const actual =
+                item.actualResult || "--";
+
+
+              const confidence =
+                item.confidence != null
+                  ? `${item.confidence}%`
+                  : "--";
+
+
+              let statusClass =
+                "status-pending";
+
+
+              let statusText =
+                "PENDING";
+
+
+              if (item.status === "WIN") {
+
+                statusClass =
+                  "status-win";
+
+                statusText =
+                  "WIN";
+
+              }
+
+
+              if (item.status === "LOSS") {
+
+                statusClass =
+                  "status-loss";
+
+                statusText =
+                  "LOSS";
+
+              }
+
+
+              const predictionClass =
+                prediction === "BIG"
+                  ? "badge-big"
+                  : "badge-small";
+
+
+              const actualClass =
+                actual === "BIG"
+                  ? "badge-big"
+                  : "badge-small";
+
+
+              return `
+
+                <tr>
+
+                  <td class="issue">
+                    ${item.issueNumber || "--"}
+                  </td>
+
+
+                  <td>
+
+                    <span
+                      class="prediction-badge ${predictionClass}">
+                      ${prediction}
+                    </span>
+
+                  </td>
+
+
+                  <td>
+
+                    ${
+                      actual === "--"
+
+                        ? "--"
+
+                        : `
+                          <span
+                            class="actual-badge ${actualClass}">
+                            ${actual}
+                          </span>
+                        `
+                    }
+
+                  </td>
+
+
+                  <td>
+                    ${confidence}
+                  </td>
+
+
+                  <td>
+
+                    <span
+                      class="status-badge ${statusClass}">
+                      ${statusText}
+                    </span>
+
+                  </td>
+
+                </tr>
+
+              `;
+
+            })
+            .join("");
+
+
+      } catch (error) {
+
+        console.error(
+          "History error:",
+          error
+        );
+
+        showError(
+          `History failed: ${error.message}`
+        );
+
+
+        historyTableEl.innerHTML = `
+          <tr>
+            <td
+              colspan="5"
+              class="empty">
+              Failed to load prediction history
+            </td>
+          </tr>
+        `;
+
+      }
+
+    }
+
+
+    /* =========================================
+       COUNTDOWN
+    ========================================= */
+
+    function updateCountdown() {
+
+      const now =
+        new Date();
+
+
+      const seconds =
+        now.getSeconds();
+
+
+      let remaining =
+        60 - seconds;
+
+
+      if (remaining === 60) {
+        remaining = 0;
+      }
+
+
+      const minutes =
+        Math.floor(
+          remaining / 60
+        );
+
+
+      const secs =
+        remaining % 60;
+
+
+      countdownEl.textContent =
+        `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+    }
+
+
+    /* =========================================
+       LOAD EVERYTHING
+    ========================================= */
+
+    async function loadDashboard() {
+
+      await Promise.all([
+        loadPrediction(),
+        loadPredictions()
+      ]);
+
+    }
+
+
+    /* =========================================
+       INITIAL LOAD
+    ========================================= */
+
+    loadDashboard();
+
+    updateCountdown();
+
+
+    /* =========================================
+       AUTO REFRESH
+    ========================================= */
+
+    setInterval(
+      loadDashboard,
+      10000
+    );
+
+    /* =========================================
+       COUNTDOWN UPDATE
+    ========================================= */
+
+    setInterval(
+      updateCountdown,
+      1000
+    );
+
+  </script>
+
+</body>
+</html>
+
