@@ -1145,7 +1145,7 @@ async function calculatePrediction() {
 
 
 app.get("/predict", (req, res) => {
-  res.sendFile(__dirname + "/New.html");
+  res.sendFile(__dirname + "/new.html");
 });
 
 
