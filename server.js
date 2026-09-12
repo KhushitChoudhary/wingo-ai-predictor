@@ -1149,6 +1149,20 @@ app.get("/predict", (req, res) => {
 });
 
 
+app.get("/api/source-status", (req, res) => {
+  res.json({
+    success: true,
+    sourceAvailable: !sourceBlocked,
+    sourceBlocked,
+    lastError: lastSourceError,
+    lastErrorTime: lastSourceErrorTime,
+    message: sourceBlocked
+      ? "Live WinGo source is currently unavailable. Existing database history is being used."
+      : "WinGo source is available."
+  });
+});
+
+
 // ======================================================
 // API - CURRENT PREDICTION
 // ======================================================
@@ -1574,32 +1588,43 @@ app.get(
 // FETCH SOURCE RESULTS
 // ======================================================
 
+let sourceBlocked = false;
+let lastSourceError = null;
+let lastSourceErrorTime = null;
+
 async function fetchSourceResults() {
   try {
-    console.log("Fetching WinGo results...");
-
     const url = `${SOURCE_API}?t=${Date.now()}`;
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
         Accept: "application/json,text/plain,*/*",
-        Referer: "https://draw.ar-lottery01.com/",
-        Origin: "https://draw.ar-lottery01.com"
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
       }
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `Source API error: ${response.status}`
+    if (response.status === 403) {
+      sourceBlocked = true;
+      lastSourceError = "Source API returned 403 Forbidden";
+      lastSourceErrorTime = new Date();
+
+      console.warn(
+        "WinGo source is currently unavailable (403). Keeping existing database history."
       );
+
+      return [];
+    }
+
+    if (!response.ok) {
+      throw new Error(`Source API error: ${response.status}`);
     }
 
     const json = await response.json();
 
-    console.log("Source response received");
+    sourceBlocked = false;
+    lastSourceError = null;
 
     const list =
       json?.data?.list ||
@@ -1611,8 +1636,11 @@ async function fetchSourceResults() {
 
     return list;
   } catch (error) {
-    console.error(
-      "Source fetch error:",
+    lastSourceError = error.message;
+    lastSourceErrorTime = new Date();
+
+    console.warn(
+      "WinGo source temporarily unavailable:",
       error.message
     );
 
