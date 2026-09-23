@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,8 +19,6 @@
       color: #15152b;
       min-height: 100vh;
     }
-
-    /* ================= HEADER ================= */
 
     .header {
       background: #17132f;
@@ -58,8 +55,6 @@
       box-shadow: 0 0 10px #35d07f;
     }
 
-    /* ================= MAIN ================= */
-
     .container {
       width: min(1100px, 94%);
       margin: 30px auto;
@@ -79,8 +74,6 @@
       font-size: 14px;
     }
 
-    /* ================= ERROR ================= */
-
     .error-box {
       display: none;
       background: #ffe9e9;
@@ -90,8 +83,6 @@
       margin-bottom: 20px;
       border: 1px solid #ffc7c7;
     }
-
-    /* ================= TOP GRID ================= */
 
     .top-grid {
       display: grid;
@@ -116,8 +107,6 @@
       letter-spacing: 0.7px;
       margin-bottom: 20px;
     }
-
-    /* ================= PREDICTION ================= */
 
     .prediction-card {
       text-align: center;
@@ -168,8 +157,6 @@
       margin-bottom: 25px;
     }
 
-    /* ================= PROBABILITY ================= */
-
     .probability-row {
       margin-bottom: 18px;
     }
@@ -205,8 +192,6 @@
       background: #e45b72;
     }
 
-    /* ================= COUNTDOWN ================= */
-
     .countdown-card {
       text-align: center;
       display: flex;
@@ -232,8 +217,6 @@
       font-size: 12px;
       color: #9993aa;
     }
-
-    /* ================= STATS ================= */
 
     .stats-grid {
       display: grid;
@@ -278,8 +261,6 @@
     .rate-value {
       color: #6751d9;
     }
-
-    /* ================= HISTORY ================= */
 
     .history-card {
       padding: 25px;
@@ -377,8 +358,6 @@
       color: #9993aa;
     }
 
-    /* ================= FOOTER ================= */
-
     .footer {
       text-align: center;
       padding: 25px;
@@ -386,10 +365,7 @@
       font-size: 12px;
     }
 
-    /* ================= RESPONSIVE ================= */
-
     @media (max-width: 800px) {
-
       .top-grid {
         grid-template-columns: 1fr;
       }
@@ -416,7 +392,6 @@
     }
 
     @media (max-width: 480px) {
-
       .page-title h1 {
         font-size: 25px;
       }
@@ -446,818 +421,822 @@
 
 <body>
 
-  <!-- ================= HEADER ================= -->
+<header class="header">
 
-  <header class="header">
+  <div class="logo">
+    WinGo <span>AI Predictor</span>
+  </div>
 
-    <div class="logo">
-      WinGo <span>AI Predictor</span>
+  <div class="live">
+    <span class="live-dot"></span>
+    LIVE
+  </div>
+
+</header>
+
+<main class="container">
+
+  <div class="page-title">
+    <h1>AI Prediction Dashboard</h1>
+  </div>
+
+  <div id="errorBox" class="error-box"></div>
+
+  <section class="top-grid">
+
+    <div class="card prediction-card">
+
+      <div class="card-title">
+        Next Prediction
+      </div>
+
+      <div class="next-issue-label">
+        Next Issue
+      </div>
+
+      <div id="nextIssue" class="next-issue">
+        Loading...
+      </div>
+
+      <div class="prediction-label">
+        Predicted Result
+      </div>
+
+      <div id="prediction" class="prediction">
+        --
+      </div>
+
+      <div id="confidence" class="model-score">
+        Model Score: --%
+      </div>
+
+      <div class="probability-row">
+
+        <div class="probability-head">
+          <span>BIG</span>
+          <span id="bigProbability">--%</span>
+        </div>
+
+        <div class="progress">
+          <div id="bigBar" class="bar-fill big-bar"></div>
+        </div>
+
+      </div>
+
+      <div class="probability-row">
+
+        <div class="probability-head">
+          <span>SMALL</span>
+          <span id="smallProbability">--%</span>
+        </div>
+
+        <div class="progress">
+          <div id="smallBar" class="bar-fill small-bar"></div>
+        </div>
+
+      </div>
+
     </div>
 
-    <div class="live">
-      <span class="live-dot"></span>
-      LIVE
+    <div class="card countdown-card">
+
+      <div class="card-title">
+        Round Timer
+      </div>
+
+      <div class="countdown-title">
+        Time Remaining
+      </div>
+
+      <div id="countdown" class="countdown">
+        01:00
+      </div>
+
+      <div class="countdown-subtitle">
+        Next round countdown
+      </div>
+
     </div>
 
-  </header>
+  </section>
 
-  <!-- ================= MAIN ================= -->
+  <section class="stats-grid">
 
-  <main class="container">
+    <div class="stat-card">
+      <div id="wins" class="stat-value win-value">0</div>
+      <div class="stat-label">Wins</div>
+    </div>
 
-    <div class="page-title">
-      <h1>AI Prediction Dashboard</h1>
+    <div class="stat-card">
+      <div id="losses" class="stat-value loss-value">0</div>
+      <div class="stat-label">Losses</div>
+    </div>
+
+    <div class="stat-card">
+      <div id="pending" class="stat-value pending-value">0</div>
+      <div class="stat-label">Pending</div>
+    </div>
+
+    <div class="stat-card">
+      <div id="winRate" class="stat-value rate-value">0%</div>
+      <div class="stat-label">Win Rate</div>
+    </div>
+
+  </section>
+
+  <section class="card history-card">
+
+    <div class="history-header">
+
+      <h2>
+        Prediction History
+      </h2>
+
+      <span>
+        Last 10 predictions
+      </span>
 
     </div>
 
+    <div class="table-wrapper">
 
-    <!-- ERROR -->
+      <table>
 
-    <div id="errorBox" class="error-box"></div>
-
-    <!-- ================= TOP ================= -->
-
-    <section class="top-grid">
-
-      <!-- Prediction -->
-
-      <div class="card prediction-card">
-
-        <div class="card-title">
-          Next Prediction
-        </div>
-
-        <div class="next-issue-label">
-          Next Issue
-        </div>
-
-        <div id="nextIssue" class="next-issue">
-          Loading...
-        </div>
-
-        <div class="prediction-label">
-          Predicted Result
-        </div>
-
-        <div id="prediction" class="prediction">
-          --
-        </div>
-
-        <div id="confidence" class="model-score">
-          Model Score: --%
-        </div>
-
-        <!-- BIG -->
-
-        <div class="probability-row">
-
-          <div class="probability-head">
-            <span>BIG</span>
-            <span id="bigProbability">--%</span>
-          </div>
-
-          <div class="progress">
-            <div
-              id="bigBar"
-              class="bar-fill big-bar">
-            </div>
-          </div>
-
-        </div>
-
-
-        <!-- SMALL -->
-
-        <div class="probability-row">
-
-          <div class="probability-head">
-            <span>SMALL</span>
-            <span id="smallProbability">--%</span>
-          </div>
-
-          <div class="progress">
-            <div
-              id="smallBar"
-              class="bar-fill small-bar">
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
-
-      <!-- Countdown -->
-
-      <div class="card countdown-card">
-
-        <div class="card-title">
-          Round Timer
-        </div>
-
-        <div class="countdown-title">
-          Time Remaining
-        </div>
-
-        <div id="countdown" class="countdown">
-          01:00
-        </div>
-
-        <div class="countdown-subtitle">
-          Next round countdown
-        </div>
-
-      </div>
-
-    </section>
-
-
-    <!-- ================= STATS ================= -->
-
-    <section class="stats-grid">
-
-      <div class="stat-card">
-        <div
-          id="wins"
-          class="stat-value win-value">
-          0
-        </div>
-
-        <div class="stat-label">
-          Wins
-        </div>
-      </div>
-
-
-      <div class="stat-card">
-        <div
-          id="losses"
-          class="stat-value loss-value">
-          0
-        </div>
-
-        <div class="stat-label">
-          Losses
-        </div>
-      </div>
-
-
-      <div class="stat-card">
-        <div
-          id="pending"
-          class="stat-value pending-value">
-          0
-        </div>
-
-        <div class="stat-label">
-          Pending
-        </div>
-      </div>
-
-
-      <div class="stat-card">
-        <div
-          id="winRate"
-          class="stat-value rate-value">
-          0%
-        </div>
-
-        <div class="stat-label">
-          Win Rate
-        </div>
-      </div>
-
-    </section>
-
-
-    <!-- ================= HISTORY ================= -->
-
-    <section class="card history-card">
-
-      <div class="history-header">
-
-        <h2>
-          Prediction History
-        </h2>
-
-        <span>
-          Last 10 predictions
-        </span>
-
-      </div>
-
-
-      <div class="table-wrapper">
-
-        <table>
-
-          <thead>
-
-            <tr>
-              <th>Issue</th>
-              <th>Prediction</th>
-              <th>Actual</th>
-              <th>Confidence</th>
-              <th>Status</th>
-            </tr>
-
-          </thead>
-
-          <tbody id="historyTable">
-
-            <tr>
-              <td
-                colspan="5"
-                class="empty">
-                Loading prediction history...
-              </td>
-            </tr>
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </section>
-
-  </main>
-
-
-  <!-- ================= FOOTER ================= -->
-
-  <footer class="footer">
-    WinGo AI Predictor • Experimental pattern analysis
-  </footer>
-
-
-  <!-- ================= JAVASCRIPT ================= -->
-
-  <script>
-
-    /* =========================================
-       API CONFIG
-    ========================================= */
-
-    const API_BASE =
-      "https://wingo-ai-predictor-a2eg.onrender.com";
-
-
-    /* =========================================
-       ELEMENTS
-    ========================================= */
-
-    const predictionEl =
-      document.getElementById("prediction");
-
-    const confidenceEl =
-      document.getElementById("confidence");
-
-    const nextIssueEl =
-      document.getElementById("nextIssue");
-
-    const bigProbabilityEl =
-      document.getElementById("bigProbability");
-
-    const smallProbabilityEl =
-      document.getElementById("smallProbability");
-
-    const bigBarEl =
-      document.getElementById("bigBar");
-
-    const smallBarEl =
-      document.getElementById("smallBar");
-
-    const countdownEl =
-      document.getElementById("countdown");
-
-    const historyTableEl =
-      document.getElementById("historyTable");
-
-    const winsEl =
-      document.getElementById("wins");
-
-    const lossesEl =
-      document.getElementById("losses");
-
-    const pendingEl =
-      document.getElementById("pending");
-
-    const winRateEl =
-      document.getElementById("winRate");
-
-    const errorBoxEl =
-      document.getElementById("errorBox");
-
-
-    /* =========================================
-       ERROR FUNCTIONS
-    ========================================= */
-
-    function showError(message) {
-
-      errorBoxEl.style.display = "block";
-
-      errorBoxEl.textContent =
-        message;
-
-    }
-
-
-    function hideError() {
-
-      errorBoxEl.style.display = "none";
-
-      errorBoxEl.textContent = "";
-
-    }
-
-
-    /* =========================================
-       LOAD CURRENT PREDICTION
-    ========================================= */
-
-    async function loadPrediction() {
-
-      try {
-
-        const response =
-          await fetch(
-            `${API_BASE}/api/predict`
-          );
-
-        if (!response.ok) {
-
-          throw new Error(
-            `Prediction API error: ${response.status}`
-          );
-
-        }
-
-        const data =
-          await response.json();
-
-        console.log(
-          "Prediction API Response:",
-          data
-        );
-
-
-        /*
-          IMPORTANT:
-
-          Tumhare current backend ka response
-          direct prediction object hai.
-
-          Example:
-
-          {
-            prediction: "SMALL",
-            confidence: 53,
-            bigProbability: 46.62,
-            smallProbability: 53.38
-          }
-
-          Isliye:
-
-          const p = data;
-
-          NOT:
-
-          const p = data.prediction;
-        */
-
-        const p = data;
-
-
-        if (!p.prediction) {
-
-          throw new Error(
-            "Prediction data not available"
-          );
-
-        }
-
-
-        /* ==============================
-           PREDICTION
-        ============================== */
-
-        predictionEl.textContent =
-          p.prediction;
-
-
-        predictionEl.className =
-          "prediction " +
-          (
-            p.prediction === "BIG"
-              ? "big"
-              : "small"
-          );
-
-
-        /* ==============================
-           CONFIDENCE
-        ============================== */
-
-        confidenceEl.textContent =
-          `Model Score: ${p.confidence ?? 0}%`;
-
-
-        /* ==============================
-           NEXT ISSUE
-        ============================== */
-
-        if (p.nextIssue) {
-
-          nextIssueEl.textContent =
-            p.nextIssue;
-
-        } else {
-
-          nextIssueEl.textContent =
-            "Upcoming";
-
-        }
-
-
-        /* ==============================
-           PROBABILITIES
-        ============================== */
-
-        const bigProbability =
-          Number(
-            p.bigProbability ?? 0
-          );
-
-        const smallProbability =
-          Number(
-            p.smallProbability ?? 0
-          );
-
-
-        bigProbabilityEl.textContent =
-          `${bigProbability.toFixed(2)}%`;
-
-
-        smallProbabilityEl.textContent =
-          `${smallProbability.toFixed(2)}%`;
-
-
-        bigBarEl.style.width =
-          `${bigProbability}%`;
-
-
-        smallBarEl.style.width =
-          `${smallProbability}%`;
-
-
-        hideError();
-
-
-      } catch (error) {
-
-        console.error(
-          "Prediction error:",
-          error
-        );
-
-        showError(
-          `Prediction failed: ${error.message}`
-        );
-
-      }
-
-    }
-
-
-    /* =========================================
-       LOAD LAST 10 PREDICTIONS
-    ========================================= */
-
-    async function loadPredictions() {
-
-      try {
-
-        const response =
-          await fetch(
-            `${API_BASE}/api/predictions`
-          );
-
-
-        if (!response.ok) {
-
-          throw new Error(
-            `History API error: ${response.status}`
-          );
-
-        }
-
-
-        const data =
-          await response.json();
-
-
-        console.log(
-          "Prediction History:",
-          data
-        );
-
-
-        if (!data.success) {
-
-          throw new Error(
-            data.message ||
-            "Failed to load history"
-          );
-
-        }
-
-
-        const predictions =
-          Array.isArray(data.predictions)
-            ? data.predictions
-            : [];
-
-
-        /* =================================
-           STATS
-        ================================= */
-
-        const stats =
-          data.stats || {};
-
-
-        winsEl.textContent =
-          stats.wins ?? 0;
-
-
-        lossesEl.textContent =
-          stats.losses ?? 0;
-
-
-        pendingEl.textContent =
-          stats.pending ?? 0;
-
-
-        winRateEl.textContent =
-          `${stats.winRate ?? 0}%`;
-
-
-        /* =================================
-           EMPTY HISTORY
-        ================================= */
-
-        if (predictions.length === 0) {
-
-          historyTableEl.innerHTML = `
-            <tr>
-              <td
-                colspan="5"
-                class="empty">
-                No prediction history available
-              </td>
-            </tr>
-          `;
-
-          return;
-
-        }
-
-
-        /* =================================
-           TABLE
-        ================================= */
-
-        historyTableEl.innerHTML =
-          predictions
-            .map(item => {
-
-
-              const prediction =
-                item.prediction || "--";
-
-
-              const actual =
-                item.actualResult || "--";
-
-
-              const confidence =
-                item.confidence != null
-                  ? `${item.confidence}%`
-                  : "--";
-
-
-              let statusClass =
-                "status-pending";
-
-
-              let statusText =
-                "PENDING";
-
-
-              if (item.status === "WIN") {
-
-                statusClass =
-                  "status-win";
-
-                statusText =
-                  "WIN";
-
-              }
-
-
-              if (item.status === "LOSS") {
-
-                statusClass =
-                  "status-loss";
-
-                statusText =
-                  "LOSS";
-
-              }
-
-
-              const predictionClass =
-                prediction === "BIG"
-                  ? "badge-big"
-                  : "badge-small";
-
-
-              const actualClass =
-                actual === "BIG"
-                  ? "badge-big"
-                  : "badge-small";
-
-
-              return `
-
-                <tr>
-
-                  <td class="issue">
-                    ${item.issueNumber || "--"}
-                  </td>
-
-
-                  <td>
-
-                    <span
-                      class="prediction-badge ${predictionClass}">
-                      ${prediction}
-                    </span>
-
-                  </td>
-
-
-                  <td>
-
-                    ${
-                      actual === "--"
-
-                        ? "--"
-
-                        : `
-                          <span
-                            class="actual-badge ${actualClass}">
-                            ${actual}
-                          </span>
-                        `
-                    }
-
-                  </td>
-
-
-                  <td>
-                    ${confidence}
-                  </td>
-
-
-                  <td>
-
-                    <span
-                      class="status-badge ${statusClass}">
-                      ${statusText}
-                    </span>
-
-                  </td>
-
-                </tr>
-
-              `;
-
-            })
-            .join("");
-
-
-      } catch (error) {
-
-        console.error(
-          "History error:",
-          error
-        );
-
-        showError(
-          `History failed: ${error.message}`
-        );
-
-
-        historyTableEl.innerHTML = `
+        <thead>
           <tr>
-            <td
-              colspan="5"
-              class="empty">
-              Failed to load prediction history
+            <th>Issue</th>
+            <th>Prediction</th>
+            <th>Actual</th>
+            <th>Confidence</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody id="historyTable">
+
+          <tr>
+            <td colspan="5" class="empty">
+              Loading prediction history...
             </td>
           </tr>
-        `;
 
-      }
+        </tbody>
 
-    }
+      </table>
 
+    </div>
 
-    /* =========================================
-       COUNTDOWN
-    ========================================= */
+  </section>
 
-    function updateCountdown() {
+</main>
 
-      const now =
-        new Date();
+<footer class="footer">
+  WinGo AI Predictor • Experimental pattern analysis
+</footer>
 
+<script>
 
-      const seconds =
-        now.getSeconds();
+/* =========================================================
+   API CONFIG
+========================================================= */
 
+const API_BASE =
+  "https://wingo-ai-predictor-a2eg.onrender.com";
 
-      let remaining =
-        60 - seconds;
-
-
-      if (remaining === 60) {
-        remaining = 0;
-      }
+const WINGO_API =
+  "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
 
-      const minutes =
-        Math.floor(
-          remaining / 60
-        );
+/* =========================================================
+   ELEMENTS
+========================================================= */
+
+const predictionEl =
+  document.getElementById("prediction");
+
+const confidenceEl =
+  document.getElementById("confidence");
+
+const nextIssueEl =
+  document.getElementById("nextIssue");
+
+const bigProbabilityEl =
+  document.getElementById("bigProbability");
+
+const smallProbabilityEl =
+  document.getElementById("smallProbability");
+
+const bigBarEl =
+  document.getElementById("bigBar");
+
+const smallBarEl =
+  document.getElementById("smallBar");
+
+const countdownEl =
+  document.getElementById("countdown");
+
+const historyTableEl =
+  document.getElementById("historyTable");
+
+const winsEl =
+  document.getElementById("wins");
+
+const lossesEl =
+  document.getElementById("losses");
+
+const pendingEl =
+  document.getElementById("pending");
+
+const winRateEl =
+  document.getElementById("winRate");
+
+const errorBoxEl =
+  document.getElementById("errorBox");
 
 
-      const secs =
-        remaining % 60;
+/* =========================================================
+   ERROR
+========================================================= */
+
+function showError(message) {
+
+  errorBoxEl.style.display =
+    "block";
+
+  errorBoxEl.textContent =
+    message;
+}
+
+function hideError() {
+
+  errorBoxEl.style.display =
+    "none";
+
+  errorBoxEl.textContent =
+    "";
+}
 
 
-      countdownEl.textContent =
-        `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+/* =========================================================
+   FETCH WINGO SOURCE
+========================================================= */
 
-    }
+async function fetchWinGoSource() {
+
+  const url =
+    `${WINGO_API}?t=${Date.now()}`;
+
+  const response =
+    await fetch(url, {
+      method: "GET",
+
+      headers: {
+        Accept:
+          "application/json, text/plain, */*"
+      },
+
+      cache: "no-store"
+    });
+
+  if (!response.ok) {
+    throw new Error(
+      `WinGo API error: ${response.status}`
+    );
+  }
+
+  const json =
+    await response.json();
+
+  const list =
+    json?.data?.list ||
+    json?.data ||
+    json?.list ||
+    [];
+
+  if (!Array.isArray(list)) {
+    throw new Error(
+      "WinGo API list not found"
+    );
+  }
+
+  return list;
+}
 
 
-    /* =========================================
-       LOAD EVERYTHING
-    ========================================= */
+/* =========================================================
+   SEND SOURCE DATA TO RENDER
+========================================================= */
 
-    async function loadDashboard() {
+async function syncWinGoToBackend() {
 
-      await Promise.all([
-        loadPrediction(),
-        loadPredictions()
-      ]);
+  try {
 
-    }
+    const list =
+      await fetchWinGoSource();
 
-
-    /* =========================================
-       INITIAL LOAD
-    ========================================= */
-
-    loadDashboard();
-
-    updateCountdown();
-
-
-    /* =========================================
-       AUTO REFRESH
-    ========================================= */
-
-    setInterval(
-      loadDashboard,
-      10000
+    console.log(
+      "WinGo source results:",
+      list.length
     );
 
-    /* =========================================
-       COUNTDOWN UPDATE
-    ========================================= */
+    const response =
+      await fetch(
+        `${API_BASE}/api/source-results`,
+        {
+          method: "POST",
 
-    setInterval(
-      updateCountdown,
-      1000
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+            list
+          })
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `Backend sync error: ${response.status}`
+      );
+    }
+
+    const data =
+      await response.json();
+
+    console.log(
+      "Backend sync response:",
+      data
     );
 
-  </script>
+    if (!data.success) {
+      throw new Error(
+        data.message ||
+        "Backend sync failed"
+      );
+    }
+
+    return data;
+
+  } catch (error) {
+
+    console.error(
+      "WinGo sync error:",
+      error
+    );
+
+    throw error;
+  }
+}
+
+
+/* =========================================================
+   LOAD CURRENT PREDICTION
+========================================================= */
+
+async function loadPrediction() {
+
+  try {
+
+    const response =
+      await fetch(
+        `${API_BASE}/api/predict?t=${Date.now()}`,
+        {
+          cache: "no-store"
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `Prediction API error: ${response.status}`
+      );
+    }
+
+    const data =
+      await response.json();
+
+    console.log(
+      "Prediction API:",
+      data
+    );
+
+    const p = data;
+
+    if (!p.prediction) {
+      throw new Error(
+        p.message ||
+        "Prediction data not available"
+      );
+    }
+
+    /* PREDICTION */
+
+    predictionEl.textContent =
+      p.prediction;
+
+    predictionEl.className =
+      "prediction " +
+      (
+        p.prediction === "BIG"
+          ? "big"
+          : "small"
+      );
+
+
+    /* CONFIDENCE */
+
+    confidenceEl.textContent =
+      `Model Score: ${p.confidence ?? 0}%`;
+
+
+    /* NEXT ISSUE */
+
+    nextIssueEl.textContent =
+      p.nextIssue ||
+      "Upcoming";
+
+
+    /* PROBABILITIES */
+
+    const bigProbability =
+      Number(
+        p.bigProbability ?? 0
+      );
+
+    const smallProbability =
+      Number(
+        p.smallProbability ?? 0
+      );
+
+
+    bigProbabilityEl.textContent =
+      `${bigProbability.toFixed(2)}%`;
+
+    smallProbabilityEl.textContent =
+      `${smallProbability.toFixed(2)}%`;
+
+
+    bigBarEl.style.width =
+      `${bigProbability}%`;
+
+    smallBarEl.style.width =
+      `${smallProbability}%`;
+
+    hideError();
+
+  } catch (error) {
+
+    console.error(
+      "Prediction error:",
+      error
+    );
+
+    showError(
+      `Prediction failed: ${error.message}`
+    );
+  }
+}
+
+
+/* =========================================================
+   LOAD LAST 10 PREDICTIONS
+========================================================= */
+
+async function loadPredictions() {
+
+  try {
+
+    const response =
+      await fetch(
+        `${API_BASE}/api/predictions?t=${Date.now()}`,
+        {
+          cache: "no-store"
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `History API error: ${response.status}`
+      );
+    }
+
+    const data =
+      await response.json();
+
+    if (!data.success) {
+      throw new Error(
+        data.message ||
+        "Failed to load history"
+      );
+    }
+
+    const predictions =
+      Array.isArray(
+        data.predictions
+      )
+        ? data.predictions
+        : [];
+
+
+    /* STATS */
+
+    const stats =
+      data.stats || {};
+
+    winsEl.textContent =
+      stats.wins ?? 0;
+
+    lossesEl.textContent =
+      stats.losses ?? 0;
+
+    pendingEl.textContent =
+      stats.pending ?? 0;
+
+    winRateEl.textContent =
+      `${stats.winRate ?? 0}%`;
+
+
+    /* EMPTY */
+
+    if (predictions.length === 0) {
+
+      historyTableEl.innerHTML = `
+        <tr>
+          <td
+            colspan="5"
+            class="empty">
+            No prediction history available
+          </td>
+        </tr>
+      `;
+
+      return;
+    }
+
+
+    /* TABLE */
+
+    historyTableEl.innerHTML =
+      predictions
+        .map(item => {
+
+          const prediction =
+            item.prediction || "--";
+
+          const actual =
+            item.actualResult ||
+            item.actual ||
+            "--";
+
+          const confidence =
+            item.confidence != null
+              ? `${item.confidence}%`
+              : "--";
+
+
+          let statusClass =
+            "status-pending";
+
+          let statusText =
+            "PENDING";
+
+
+          if (
+            item.status === "WIN"
+          ) {
+
+            statusClass =
+              "status-win";
+
+            statusText =
+              "WIN";
+          }
+
+
+          if (
+            item.status === "LOSS"
+          ) {
+
+            statusClass =
+              "status-loss";
+
+            statusText =
+              "LOSS";
+          }
+
+
+          const predictionClass =
+            prediction === "BIG"
+              ? "badge-big"
+              : "badge-small";
+
+
+          const actualClass =
+            actual === "BIG"
+              ? "badge-big"
+              : "badge-small";
+
+
+          return `
+
+            <tr>
+
+              <td class="issue">
+                ${item.issueNumber || "--"}
+              </td>
+
+              <td>
+
+                <span
+                  class="prediction-badge ${predictionClass}">
+                  ${prediction}
+                </span>
+
+              </td>
+
+              <td>
+
+                ${
+                  actual === "--"
+                    ? "--"
+                    : `
+                      <span
+                        class="actual-badge ${actualClass}">
+                        ${actual}
+                      </span>
+                    `
+                }
+
+              </td>
+
+              <td>
+                ${confidence}
+              </td>
+
+              <td>
+
+                <span
+                  class="status-badge ${statusClass}">
+                  ${statusText}
+                </span>
+
+              </td>
+
+            </tr>
+
+          `;
+
+        })
+        .join("");
+
+  } catch (error) {
+
+    console.error(
+      "History error:",
+      error
+    );
+
+    showError(
+      `History failed: ${error.message}`
+    );
+
+    historyTableEl.innerHTML = `
+      <tr>
+        <td
+          colspan="5"
+          class="empty">
+          Failed to load prediction history
+        </td>
+      </tr>
+    `;
+  }
+}
+
+
+/* =========================================================
+   LOAD EVERYTHING
+========================================================= */
+
+async function loadDashboard() {
+
+  try {
+
+    /*
+      STEP 1:
+      WinGo se latest source data lao
+
+      STEP 2:
+      Render ko bhejo
+
+      STEP 3:
+      Render last 100 actual results se
+      prediction calculate karega
+
+      STEP 4:
+      UI prediction + last 10 history load karegi
+    */
+
+    await syncWinGoToBackend();
+
+    await Promise.all([
+      loadPrediction(),
+      loadPredictions()
+    ]);
+
+  } catch (error) {
+
+    console.error(
+      "Dashboard error:",
+      error
+    );
+
+    showError(
+      `Data sync failed: ${error.message}`
+    );
+
+    /*
+      Agar source temporarily fail ho,
+      tab bhi existing backend data se
+      prediction/history load karne ki koshish.
+    */
+
+    await Promise.all([
+      loadPrediction(),
+      loadPredictions()
+    ]);
+  }
+}
+
+
+/* =========================================================
+   COUNTDOWN
+========================================================= */
+
+function updateCountdown() {
+
+  const now =
+    new Date();
+
+  const seconds =
+    now.getSeconds();
+
+  let remaining =
+    60 - seconds;
+
+  if (remaining === 60) {
+    remaining = 0;
+  }
+
+  const minutes =
+    Math.floor(
+      remaining / 60
+    );
+
+  const secs =
+    remaining % 60;
+
+  countdownEl.textContent =
+    `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+
+/* =========================================================
+   INITIAL LOAD
+========================================================= */
+
+loadDashboard();
+
+updateCountdown();
+
+
+/* =========================================================
+   AUTO REFRESH
+========================================================= */
+
+/*
+   Every 10 seconds:
+
+   WinGo → Browser → Render → MongoDB
+   → Prediction → UI
+*/
+
+setInterval(
+  loadDashboard,
+  10000
+);
+
+
+/* =========================================================
+   COUNTDOWN
+========================================================= */
+
+setInterval(
+  updateCountdown,
+  1000
+);
+
+</script>
 
 </body>
 </html>
-
