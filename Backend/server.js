@@ -1,6 +1,5 @@
 require("dotenv").config();
 
-// DNS fix for MongoDB Atlas / Windows
 const dns = require("dns");
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
@@ -15,20 +14,18 @@ const Prediction = require("./models/Prediction");
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
+
 app.use(express.static(path.join(__dirname, "..")));
 
 const PORT = process.env.PORT || 3000;
 
-const SOURCE_API =
-  "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
-
 const HISTORY_LIMIT = 100;
 const MIN_HISTORY = 20;
 
-// ======================================================
-// ADAPTIVE MODEL CACHE
-// ======================================================
+/* =========================================================
+   ADAPTIVE CACHE
+========================================================= */
 
 let adaptiveCache = {
   weights: null,
@@ -38,41 +35,57 @@ let adaptiveCache = {
 
 const ADAPTIVE_CACHE_TTL = 60 * 1000;
 
-// ======================================================
-// BASIC HELPERS
-// ======================================================
+/* =========================================================
+   SOURCE INGEST STATUS
+========================================================= */
+
+let lastIngestAt = null;
+let lastIngestCount = 0;
+let lastSourceError = null;
+let lastSourceErrorTime = null;
+
+/* =========================================================
+   BASIC HELPERS
+========================================================= */
 
 function normalizeResult(value) {
   if (value === undefined || value === null) {
     return null;
   }
 
-  const text = String(value).toUpperCase().trim();
+  const text = String(value).trim().toUpperCase();
 
-  if (text === "BIG") return "BIG";
-  if (text === "SMALL") return "SMALL";
+  if (text === "BIG" || text === "B") {
+    return "BIG";
+  }
+
+  if (text === "SMALL" || text === "S") {
+    return "SMALL";
+  }
 
   const number = Number(value);
 
-  if (!Number.isNaN(number)) {
-    return number >= 5 ? "BIG" : "SMALL";
+  if (Number.isNaN(number)) {
+    return null;
   }
 
-  return null;
+  return number >= 5 ? "BIG" : "SMALL";
 }
 
 function toTarget(number) {
-  const n = Number(number);
+  const value = Number(number);
 
-  if (Number.isNaN(n)) return null;
+  if (Number.isNaN(value)) {
+    return null;
+  }
 
-  return n >= 5 ? "BIG" : "SMALL";
+  return value >= 5 ? "BIG" : "SMALL";
 }
 
 function incrementIssueNumber(issueNumber) {
   try {
     return (BigInt(String(issueNumber)) + 1n).toString();
-  } catch {
+  } catch (error) {
     return null;
   }
 }
@@ -80,191 +93,118 @@ function incrementIssueNumber(issueNumber) {
 function sortByIssue(results, descending = true) {
   return [...results].sort((a, b) => {
     try {
-      const A = BigInt(String(a.issueNumber));
-      const B = BigInt(String(b.issueNumber));
+      const aIssue = BigInt(String(a.issueNumber));
+      const bIssue = BigInt(String(b.issueNumber));
 
-      return descending
-        ? Number(B - A)
-        : Number(A - B);
-    } catch {
-      return descending
-        ? String(b.issueNumber).localeCompare(String(a.issueNumber))
-        : String(a.issueNumber).localeCompare(String(b.issueNumber));
+      if (aIssue === bIssue) {
+        return 0;
+      }
+
+      if (descending) {
+        return aIssue > bIssue ? -1 : 1;
+      }
+
+      return aIssue < bIssue ? -1 : 1;
+    } catch (error) {
+      return 0;
     }
   });
 }
 
-// ======================================================
-// DATABASE CLEANUP
-// ======================================================
+/* =========================================================
+   DATABASE CLEANUP
+========================================================= */
 
-// Keep only latest 100 actual results
 async function trimResultsToLimit() {
-  const extraResults = await WinGoResult.find(
-    {},
-    { _id: 1 }
-  )
-    .sort({ createdAt: -1 })
-    .skip(HISTORY_LIMIT)
+  const results = await WinGoResult.find({})
+    .select("_id issueNumber")
     .lean();
 
-  if (extraResults.length > 0) {
-    const idsToDelete = extraResults.map((item) => item._id);
+  if (results.length <= HISTORY_LIMIT) {
+    return;
+  }
 
+  const sorted = sortByIssue(results, true);
+
+  const deleteIds = sorted
+    .slice(HISTORY_LIMIT)
+    .map(item => item._id);
+
+  if (deleteIds.length > 0) {
     await WinGoResult.deleteMany({
-      _id: { $in: idsToDelete }
+      _id: { $in: deleteIds }
     });
-
-    console.log(
-      `Old results deleted: ${extraResults.length}`
-    );
   }
 }
 
-// Keep only latest 100 predictions
 async function trimPredictionsToLimit() {
-  const extraPredictions = await Prediction.find(
-    {},
-    { _id: 1 }
-  )
-    .sort({ createdAt: -1 })
-    .skip(HISTORY_LIMIT)
+  const predictions = await Prediction.find({})
+    .select("_id issueNumber")
     .lean();
 
-  if (extraPredictions.length > 0) {
-    const idsToDelete = extraPredictions.map(
-      (item) => item._id
-    );
+  if (predictions.length <= HISTORY_LIMIT) {
+    return;
+  }
 
+  const sorted = sortByIssue(predictions, true);
+
+  const deleteIds = sorted
+    .slice(HISTORY_LIMIT)
+    .map(item => item._id);
+
+  if (deleteIds.length > 0) {
     await Prediction.deleteMany({
-      _id: { $in: idsToDelete }
+      _id: { $in: deleteIds }
     });
-
-    console.log(
-      `Old predictions deleted: ${extraPredictions.length}`
-    );
   }
 }
 
-// ======================================================
-// API - GET LATEST RESULTS
-// ======================================================
+/* =========================================================
+   GET LAST 100 ACTUAL RESULTS
+========================================================= */
 
-app.get("/api/results", async (req, res) => {
-  try {
-    const results = await WinGoResult.find({})
-      .sort({ createdAt: -1 })
-      .limit(HISTORY_LIMIT)
-      .lean();
+async function getLast100Results() {
+  const results = await WinGoResult.find({})
+    .lean();
 
-    res.json({
-      success: true,
-      count: results.length,
-      results
-    });
-  } catch (error) {
-    console.error("Results API error:", error.message);
+  return sortByIssue(results, true)
+    .slice(0, HISTORY_LIMIT);
+}
 
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-// ======================================================
-// API - GET HISTORY OLDEST -> NEWEST
-// ======================================================
-
-app.get("/api/results/history", async (req, res) => {
-  try {
-    const results = await WinGoResult.find({})
-      .sort({ createdAt: 1 })
-      .limit(HISTORY_LIMIT)
-      .lean();
-
-    res.json({
-      success: true,
-      count: results.length,
-      results
-    });
-  } catch (error) {
-    console.error(
-      "History API error:",
-      error.message
-    );
-
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-// ======================================================
-// API - ML DATA
-// ======================================================
-
-app.get("/api/ml-data", async (req, res) => {
-  try {
-    const results = await WinGoResult.find({})
-      .sort({ createdAt: 1 })
-      .limit(HISTORY_LIMIT)
-      .lean();
-
-    const data = results.map((item) => ({
-      issueNumber: item.issueNumber,
-      number: item.number,
-      result: item.result
-    }));
-
-    res.json({
-      success: true,
-      count: data.length,
-      data
-    });
-  } catch (error) {
-    console.error(
-      "ML data error:",
-      error.message
-    );
-
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-// ======================================================
-// SIGNAL 1 - SEQUENCE PATTERN
-// ======================================================
+/* =========================================================
+   SEQUENCE SIGNAL
+========================================================= */
 
 function getSequenceSignal(history) {
-  const targets = history.map((item) =>
+  const targets = history.map(item =>
     normalizeResult(item.result)
   );
 
-  const signal = {
-    name: "sequence",
-    pattern2: null,
-    pattern3: null,
-    pattern4: null,
-    pattern5: null
-  };
+  if (targets.length < 3) {
+    return null;
+  }
+
+  let bestPrediction = null;
+  let bestCount = 0;
+  let bestPatternLength = 0;
 
   for (let length = 2; length <= 5; length++) {
-    if (targets.length <= length) continue;
+    if (targets.length <= length) {
+      continue;
+    }
 
     const recentPattern = targets
       .slice(-length)
       .join(",");
 
-    const matches = [];
+    const following = {
+      BIG: 0,
+      SMALL: 0
+    };
 
     for (
       let i = 0;
-      i <= targets.length - length - 1;
+      i + length < targets.length;
       i++
     ) {
       const pattern = targets
@@ -274,250 +214,284 @@ function getSequenceSignal(history) {
       if (pattern === recentPattern) {
         const next = targets[i + length];
 
-        if (next) {
-          matches.push(next);
+        if (next === "BIG" || next === "SMALL") {
+          following[next]++;
         }
       }
     }
 
-    if (matches.length > 0) {
-      const bigCount = matches.filter(
-        (x) => x === "BIG"
-      ).length;
-
-      const smallCount = matches.filter(
-        (x) => x === "SMALL"
-      ).length;
-
-      signal[`pattern${length}`] =
-        bigCount >= smallCount
-          ? "BIG"
-          : "SMALL";
-    }
-  }
-
-  return signal;
-}
-
-// ======================================================
-// SIGNAL 2 - TRANSITION
-// ======================================================
-
-function getTransitionSignal(history) {
-  const targets = history.map((item) =>
-    normalizeResult(item.result)
-  );
-
-  if (targets.length < 2) {
-    return {
-      name: "transition",
-      prediction: null,
-      strength: 0
-    };
-  }
-
-  const last = targets[targets.length - 1];
-
-  let bigAfterBig = 0;
-  let smallAfterBig = 0;
-
-  let bigAfterSmall = 0;
-  let smallAfterSmall = 0;
-
-  for (let i = 0; i < targets.length - 1; i++) {
-    const current = targets[i];
-    const next = targets[i + 1];
-
-    if (current === "BIG") {
-      if (next === "BIG") bigAfterBig++;
-      if (next === "SMALL") smallAfterBig++;
-    }
-
-    if (current === "SMALL") {
-      if (next === "BIG") bigAfterSmall++;
-      if (next === "SMALL") smallAfterSmall++;
-    }
-  }
-
-  let prediction = null;
-  let strength = 0;
-
-  if (last === "BIG") {
     const total =
-      bigAfterBig + smallAfterBig;
+      following.BIG +
+      following.SMALL;
 
-    if (total > 0) {
-      if (bigAfterBig >= smallAfterBig) {
-        prediction = "BIG";
-      } else {
-        prediction = "SMALL";
-      }
+    if (total === 0) {
+      continue;
+    }
 
-      strength =
-        Math.abs(
-          bigAfterBig - smallAfterBig
-        ) / total;
+    const prediction =
+      following.BIG >= following.SMALL
+        ? "BIG"
+        : "SMALL";
+
+    const count =
+      Math.max(
+        following.BIG,
+        following.SMALL
+      );
+
+    if (count > bestCount) {
+      bestCount = count;
+      bestPrediction = prediction;
+      bestPatternLength = length;
     }
   }
 
-  if (last === "SMALL") {
-    const total =
-      bigAfterSmall + smallAfterSmall;
-
-    if (total > 0) {
-      if (bigAfterSmall >= smallAfterSmall) {
-        prediction = "BIG";
-      } else {
-        prediction = "SMALL";
-      }
-
-      strength =
-        Math.abs(
-          bigAfterSmall - smallAfterSmall
-        ) / total;
-    }
+  if (!bestPrediction) {
+    return null;
   }
+
+  const total =
+    targets.length > 0
+      ? bestCount
+      : 0;
+
+  const strength =
+    total > 0
+      ? Math.min(
+          1,
+          bestCount /
+            Math.max(1, total)
+        )
+      : 0;
 
   return {
-    name: "transition",
-    prediction,
-    strength
+    prediction: bestPrediction,
+    strength,
+    patternLength: bestPatternLength,
+    count: bestCount
   };
 }
 
-// ======================================================
-// SIGNAL 3 - STREAK
-// ======================================================
+/* =========================================================
+   TRANSITION SIGNAL
+========================================================= */
 
-function getStreakSignal(history) {
-  const targets = history.map((item) =>
+function getTransitionSignal(history) {
+  const targets = history.map(item =>
     normalizeResult(item.result)
   );
 
   if (targets.length < 2) {
-    return {
-      name: "streak",
-      prediction: null,
-      strength: 0,
-      streakLength: 0
-    };
+    return null;
   }
 
-  const last =
+  const current =
     targets[targets.length - 1];
 
-  let streakLength = 1;
+  if (!current) {
+    return null;
+  }
+
+  const transitions = {
+    BIG: {
+      BIG: 0,
+      SMALL: 0
+    },
+    SMALL: {
+      BIG: 0,
+      SMALL: 0
+    }
+  };
+
+  for (let i = 0; i < targets.length - 1; i++) {
+    const from = targets[i];
+    const to = targets[i + 1];
+
+    if (
+      transitions[from] &&
+      transitions[from][to] !== undefined
+    ) {
+      transitions[from][to]++;
+    }
+  }
+
+  const bigCount =
+    transitions[current].BIG;
+
+  const smallCount =
+    transitions[current].SMALL;
+
+  const total =
+    bigCount + smallCount;
+
+  if (total === 0) {
+    return null;
+  }
+
+  const prediction =
+    bigCount >= smallCount
+      ? "BIG"
+      : "SMALL";
+
+  const strength =
+    Math.max(
+      bigCount,
+      smallCount
+    ) / total;
+
+  return {
+    prediction,
+    strength,
+    current,
+    bigCount,
+    smallCount
+  };
+}
+
+/* =========================================================
+   STREAK SIGNAL
+========================================================= */
+
+function getStreakSignal(history) {
+  const targets = history.map(item =>
+    normalizeResult(item.result)
+  );
+
+  if (targets.length === 0) {
+    return null;
+  }
+
+  const current =
+    targets[targets.length - 1];
+
+  if (!current) {
+    return null;
+  }
+
+  let streak = 0;
 
   for (
-    let i = targets.length - 2;
+    let i = targets.length - 1;
     i >= 0;
     i--
   ) {
-    if (targets[i] === last) {
-      streakLength++;
+    if (targets[i] === current) {
+      streak++;
     } else {
       break;
     }
   }
 
-  let prediction = null;
-
-  if (streakLength >= 3) {
-    prediction =
-      last === "BIG"
-        ? "SMALL"
-        : "BIG";
+  if (streak < 3) {
+    return {
+      prediction: current,
+      strength: 0.25,
+      streak
+    };
   }
 
+  const prediction =
+    current === "BIG"
+      ? "SMALL"
+      : "BIG";
+
+  const strength =
+    Math.min(
+      1,
+      0.5 + streak * 0.1
+    );
+
   return {
-    name: "streak",
     prediction,
-    strength:
-      streakLength >= 3
-        ? Math.min(
-            1,
-            (streakLength - 2) / 4
-          )
-        : 0,
-    streakLength
+    strength,
+    streak
   };
 }
 
-// ======================================================
-// SIGNAL 4 - NUMBER RECURRENCE
-// ======================================================
+/* =========================================================
+   NUMBER SIGNAL
+========================================================= */
 
 function getNumberSignal(history) {
   const numbers = history
-    .map((item) => Number(item.number))
-    .filter((n) => !Number.isNaN(n));
+    .map(item => Number(item.number))
+    .filter(number =>
+      Number.isInteger(number) &&
+      number >= 0 &&
+      number <= 9
+    );
 
-  if (numbers.length < 5) {
-    return {
-      name: "number",
-      prediction: null,
-      strength: 0
-    };
+  if (numbers.length < 2) {
+    return null;
   }
 
-  const recentNumber =
+  const latestNumber =
     numbers[numbers.length - 1];
 
-  const occurrences = [];
+  const following = {
+    BIG: 0,
+    SMALL: 0
+  };
 
   for (let i = 0; i < numbers.length - 1; i++) {
-    if (numbers[i] === recentNumber) {
-      occurrences.push(numbers[i + 1]);
+    if (numbers[i] === latestNumber) {
+      const nextNumber =
+        numbers[i + 1];
 
-          }
+      const target =
+        toTarget(nextNumber);
+
+      if (target) {
+        following[target]++;
+      }
+    }
   }
 
-  if (occurrences.length === 0) {
-    return {
-      name: "number",
-      prediction: null,
-      strength: 0
-    };
+  const total =
+    following.BIG +
+    following.SMALL;
+
+  if (total === 0) {
+    return null;
   }
 
-  const bigCount = occurrences.filter(
-    (n) => n >= 5
-  ).length;
+  const prediction =
+    following.BIG >= following.SMALL
+      ? "BIG"
+      : "SMALL";
 
-  const smallCount =
-    occurrences.length - bigCount;
+  const strength =
+    Math.max(
+      following.BIG,
+      following.SMALL
+    ) / total;
 
   return {
-    name: "number",
-    prediction:
-      bigCount >= smallCount
-        ? "BIG"
-        : "SMALL",
-    strength:
-      Math.abs(
-        bigCount - smallCount
-      ) / occurrences.length
+    prediction,
+    strength,
+    latestNumber,
+    bigCount: following.BIG,
+    smallCount: following.SMALL
   };
 }
 
-// ======================================================
-// SIGNAL 5 - STRUCTURE
-// ======================================================
+/* =========================================================
+   STRUCTURE SIGNAL
+========================================================= */
 
 function getStructureSignal(history) {
-  const targets = history.map((item) =>
-    normalizeResult(item.result)
-  );
+  const targets = history
+    .map(item =>
+      normalizeResult(item.result)
+    )
+    .filter(Boolean);
 
-  if (targets.length < 10) {
-    return {
-      name: "structure",
-      prediction: null,
-      strength: 0
-    };
+  const recent =
+    targets.slice(-10);
+
+  if (recent.length < 4) {
+    return null;
   }
-
-  const recent = targets.slice(-10);
 
   let alternations = 0;
 
@@ -527,69 +501,103 @@ function getStructureSignal(history) {
     }
   }
 
-  let prediction = null;
+  const alternationRatio =
+    alternations /
+    (recent.length - 1);
 
-  if (alternations >= 7) {
-    prediction =
-      recent[recent.length - 1] === "BIG"
-        ? "BIG"
-        : "SMALL";
-  } else if (alternations <= 3) {
-    prediction =
-      recent[recent.length - 1] === "BIG"
-        ? "SMALL"
-        : "BIG";
-  }
+  if (alternationRatio >= 0.65) {
+    const current =
+      recent[recent.length - 1];
 
-  return {
-    name: "structure",
-    prediction,
-    strength:
-      Math.abs(alternations - 5) / 5
-  };
-}
-
-// ======================================================
-// SIGNAL 6 - RECENT 5
-// ======================================================
-
-function getRecentSignal(history, count) {
-  const targets = history
-    .slice(-count)
-    .map((item) =>
-      normalizeResult(item.result)
-    );
-
-  if (targets.length === 0) {
     return {
-      prediction: null,
-      strength: 0
+      prediction:
+        current === "BIG"
+          ? "SMALL"
+          : "BIG",
+      strength:
+        Math.min(
+          1,
+          alternationRatio
+        ),
+      alternationRatio
     };
   }
 
-  const bigCount = targets.filter(
-    (x) => x === "BIG"
-  ).length;
+  const big =
+    recent.filter(
+      x => x === "BIG"
+    ).length;
 
-  const smallCount =
-    targets.length - bigCount;
+  const small =
+    recent.filter(
+      x => x === "SMALL"
+    ).length;
+
+  const prediction =
+    big >= small
+      ? "BIG"
+      : "SMALL";
+
+  const strength =
+    Math.max(big, small) /
+    recent.length;
 
   return {
-    prediction:
-      bigCount >= smallCount
-        ? "BIG"
-        : "SMALL",
-
-    strength:
-      Math.abs(
-        bigCount - smallCount
-      ) / targets.length
+    prediction,
+    strength,
+    alternationRatio
   };
 }
 
-// ======================================================
-// BASE WEIGHTS
-// ======================================================
+/* =========================================================
+   RECENT SIGNAL
+========================================================= */
+
+function getRecentSignal(history, count) {
+  const targets = history
+    .map(item =>
+      normalizeResult(item.result)
+    )
+    .filter(Boolean);
+
+  const recent =
+    targets.slice(-count);
+
+  if (recent.length === 0) {
+    return null;
+  }
+
+  const big =
+    recent.filter(
+      x => x === "BIG"
+    ).length;
+
+  const small =
+    recent.filter(
+      x => x === "SMALL"
+    ).length;
+
+  const prediction =
+    big >= small
+      ? "BIG"
+      : "SMALL";
+
+  const strength =
+    Math.max(big, small) /
+    recent.length;
+
+  return {
+    prediction,
+    strength,
+    count: recent.length,
+    big,
+    small
+  };
+}
+
+/* =========================================================
+   BASE WEIGHTS
+========================================================= */
 
 const BASE_WEIGHTS = {
   pattern2: 1.0,
@@ -604,9 +612,9 @@ const BASE_WEIGHTS = {
   recent10: 0.25
 };
 
-// ======================================================
-// CALCULATE SIGNALS
-// ======================================================
+/* =========================================================
+   CALCULATE SIGNALS
+========================================================= */
 
 function calculateSignals(history) {
   const sequence =
@@ -631,55 +639,19 @@ function calculateSignals(history) {
     getRecentSignal(history, 10);
 
   return {
-    pattern2: sequence.pattern2,
-    pattern3: sequence.pattern3,
-    pattern4: sequence.pattern4,
-    pattern5: sequence.pattern5,
-
-    transition:
-      transition.prediction,
-
-    transitionStrength:
-      transition.strength,
-
-    streak:
-      streak.prediction,
-
-    streakStrength:
-      streak.strength,
-
-    streakLength:
-      streak.streakLength,
-
-    number:
-      number.prediction,
-
-    numberStrength:
-      number.strength,
-
-    structure:
-      structure.prediction,
-
-    structureStrength:
-      structure.strength,
-
-    recent5:
-      recent5.prediction,
-
-    recent5Strength:
-      recent5.strength,
-
-    recent10:
-      recent10.prediction,
-
-    recent10Strength:
-      recent10.strength
+    sequence,
+    transition,
+    streak,
+    number,
+    structure,
+    recent5,
+    recent10
   };
 }
 
-// ======================================================
-// SIGNAL PROBABILITY
-// ======================================================
+/* =========================================================
+   SIGNAL PROBABILITY
+========================================================= */
 
 function signalProbability(
   prediction,
@@ -689,35 +661,33 @@ function signalProbability(
     return 0.5;
   }
 
-  const normalizedStrength =
+  const safeStrength =
     Math.max(
       0,
       Math.min(1, strength)
     );
 
-  if (prediction === "BIG") {
-    return (
-      0.5 +
-      0.4 * normalizedStrength
-    );
-  }
+  const probability =
+    0.5 +
+    0.4 * safeStrength;
 
-  return (
-    0.5 -
-    0.4 * normalizedStrength
-  );
+  return prediction === "BIG"
+    ? probability
+    : 1 - probability;
 }
 
-// ======================================================
-// CORE PREDICTION ENGINE
-// ======================================================
+/* =========================================================
+   PREDICT FROM HISTORY
+========================================================= */
 
 function predictFromHistory(
   history,
   weights = BASE_WEIGHTS
 ) {
-  if (!history || history.length < MIN_HISTORY) {
-    return null;
+  if (history.length < MIN_HISTORY) {
+    throw new Error(
+      `At least ${MIN_HISTORY} results are required`
+    );
   }
 
   const signals =
@@ -725,16 +695,16 @@ function predictFromHistory(
 
   let bigScore = 0;
   let smallScore = 0;
+  let totalWeight = 0;
 
-  const addSignal = (
-    name,
+  function addSignal(
     prediction,
-    strength = 1
-  ) => {
-    if (!prediction) return;
-
-    const weight =
-      weights[name] || 0;
+    strength,
+    weight
+  ) {
+    if (!prediction || !weight) {
+      return;
+    }
 
     const probability =
       signalProbability(
@@ -747,90 +717,92 @@ function predictFromHistory(
 
     smallScore +=
       (1 - probability) * weight;
-  };
 
-  addSignal(
-    "pattern2",
-    signals.pattern2,
-    1
-  );
+    totalWeight += weight;
+  }
 
-  addSignal(
-    "pattern3",
-    signals.pattern3,
-    1
-  );
+  if (signals.sequence) {
+    const length =
+      signals.sequence.patternLength;
 
-  addSignal(
-    "pattern4",
-    signals.pattern4,
-    1
-  );
+    const weight =
+      weights[
+        `pattern${length}`
+      ] || 0;
 
-  addSignal(
-    "pattern5",
-    signals.pattern5,
-    1
-  );
+    addSignal(
+      signals.sequence.prediction,
+      signals.sequence.strength,
+      weight
+    );
+  }
 
-  addSignal(
-    "transition",
-    signals.transition,
-    signals.transitionStrength
-  );
+  if (signals.transition) {
+    addSignal(
+      signals.transition.prediction,
+      signals.transition.strength,
+      weights.transition
+    );
+  }
 
-  addSignal(
-    "streak",
-    signals.streak,
-    signals.streakStrength
-  );
+  if (signals.streak) {
+    addSignal(
+      signals.streak.prediction,
+      signals.streak.strength,
+      weights.streak
+    );
+  }
 
-  addSignal(
-    "number",
-    signals.number,
-    signals.numberStrength
-  );
+  if (signals.number) {
+    addSignal(
+      signals.number.prediction,
+      signals.number.strength,
+      weights.number
+    );
+  }
 
-  addSignal(
-    "structure",
-    signals.structure,
-    signals.structureStrength
-  );
+  if (signals.structure) {
+    addSignal(
+      signals.structure.prediction,
+      signals.structure.strength,
+      weights.structure
+    );
+  }
 
-  addSignal(
-    "recent5",
-    signals.recent5,
-    signals.recent5Strength
-  );
+  if (signals.recent5) {
+    addSignal(
+      signals.recent5.prediction,
+      signals.recent5.strength,
+      weights.recent5
+    );
+  }
 
-  addSignal(
-    "recent10",
-    signals.recent10,
-    signals.recent10Strength
-  );
+  if (signals.recent10) {
+    addSignal(
+      signals.recent10.prediction,
+      signals.recent10.strength,
+      weights.recent10
+    );
+  }
 
-  const totalScore =
-    bigScore + smallScore;
-
-  if (totalScore === 0) {
+  if (totalWeight === 0) {
     return {
       prediction: "BIG",
       confidence: 50,
       bigProbability: 50,
       smallProbability: 50,
       historyUsed: history.length,
-      patternInfo: "No strong pattern",
+      patternInfo: null,
       signals
     };
   }
 
   let bigProbability =
-    (bigScore / totalScore) * 100;
+    (bigScore / totalWeight) * 100;
 
   let smallProbability =
-    (smallScore / totalScore) * 100;
+    (smallScore / totalWeight) * 100;
 
-  // Avoid fake 100% certainty
   bigProbability =
     Math.max(
       10,
@@ -838,7 +810,20 @@ function predictFromHistory(
     );
 
   smallProbability =
-    100 - bigProbability;
+    Math.max(
+      10,
+      Math.min(90, smallProbability)
+    );
+
+  const total =
+    bigProbability +
+    smallProbability;
+
+  bigProbability =
+    (bigProbability / total) * 100;
+
+  smallProbability =
+    (smallProbability / total) * 100;
 
   const prediction =
     bigProbability >= smallProbability
@@ -846,43 +831,12 @@ function predictFromHistory(
       : "SMALL";
 
   const confidence =
-    Math.round(
+    Number(
       Math.max(
         bigProbability,
         smallProbability
-      )
+      ).toFixed(2)
     );
-
-  const activePatterns = [];
-
-  if (signals.pattern5)
-    activePatterns.push("5-sequence");
-
-  if (signals.pattern4)
-    activePatterns.push("4-sequence");
-
-  if (signals.pattern3)
-    activePatterns.push("3-sequence");
-
-  if (signals.pattern2)
-    activePatterns.push("2-sequence");
-
-  if (signals.transition)
-    activePatterns.push("transition");
-
-  if (signals.streak)
-    activePatterns.push("streak");
-
-  if (signals.number)
-    activePatterns.push("number");
-
-  if (signals.structure)
-    activePatterns.push("structure");
-
-  const patternInfo =
-    activePatterns.length > 0
-      ? activePatterns.join(", ")
-      : "mixed signals";
 
   return {
     prediction,
@@ -892,42 +846,39 @@ function predictFromHistory(
     smallProbability:
       Number(smallProbability.toFixed(2)),
     historyUsed: history.length,
-    patternInfo,
+    patternInfo:
+      signals.sequence || null,
     signals
   };
 }
 
-// ======================================================
-// ADAPTIVE MODEL PERFORMANCE
-// ======================================================
+/* =========================================================
+   ADAPTIVE PERFORMANCE
+========================================================= */
 
 function calculateAdaptivePerformance(history) {
-  if (!history || history.length < MIN_HISTORY + 1) {
+  if (history.length < MIN_HISTORY + 1) {
     return {
-      modelAccuracy: 50,
-      signalPerformance: {},
-      adaptiveWeights: BASE_WEIGHTS
-    };
-  }
-
-  const signalNames = Object.keys(
-    BASE_WEIGHTS
-  );
-
-  const signalStats = {};
-
-  for (const name of signalNames) {
-    signalStats[name] = {
-      correct: 0,
-      total: 0,
-      accuracy: 50
+      modelAccuracy: 0,
+      signalAccuracy: {},
+      weights: {
+        ...BASE_WEIGHTS
+      }
     };
   }
 
   let modelCorrect = 0;
   let modelTotal = 0;
 
-  // Walk-forward testing
+  const signalStats = {};
+
+  Object.keys(BASE_WEIGHTS).forEach(key => {
+    signalStats[key] = {
+      correct: 0,
+      total: 0
+    };
+  });
+
   for (
     let i = MIN_HISTORY;
     i < history.length;
@@ -941,17 +892,21 @@ function calculateAdaptivePerformance(history) {
         history[i].result
       );
 
-          const prediction =
-      predictFromHistory(
-        trainingHistory,
-        BASE_WEIGHTS
-      );
-
-    if (!prediction || !actual) {
+    if (!actual) {
       continue;
     }
 
-    modelTotal++;
+    let prediction;
+
+    try {
+      prediction =
+        predictFromHistory(
+          trainingHistory,
+          BASE_WEIGHTS
+        );
+    } catch (error) {
+      continue;
+    }
 
     if (
       prediction.prediction === actual
@@ -959,98 +914,155 @@ function calculateAdaptivePerformance(history) {
       modelCorrect++;
     }
 
+    modelTotal++;
+
     const signals =
       prediction.signals;
 
-    const signalPredictions = {
-      pattern2: signals.pattern2,
-      pattern3: signals.pattern3,
-      pattern4: signals.pattern4,
-      pattern5: signals.pattern5,
-      transition: signals.transition,
-      streak: signals.streak,
-      number: signals.number,
-      structure: signals.structure,
-      recent5: signals.recent5,
-      recent10: signals.recent10
-    };
+    if (signals.sequence) {
+      const length =
+        signals.sequence.patternLength;
 
-    for (const name of signalNames) {
-      const signalPrediction =
-        signalPredictions[name];
+      const key =
+        `pattern${length}`;
 
-      if (!signalPrediction) {
-        continue;
-      }
+      if (signalStats[key]) {
+        signalStats[key].total++;
 
-      signalStats[name].total++;
-
-      if (
-        signalPrediction === actual
-      ) {
-        signalStats[name].correct++;
+        if (
+          signals.sequence.prediction ===
+          actual
+        ) {
+          signalStats[key].correct++;
+        }
       }
     }
-  }
 
-  for (const name of signalNames) {
-    const stats =
-      signalStats[name];
+    if (signals.transition) {
+      signalStats.transition.total++;
 
-    if (stats.total > 0) {
-      stats.accuracy =
-        (stats.correct / stats.total) *
-        100;
+      if (
+        signals.transition.prediction ===
+        actual
+      ) {
+        signalStats.transition.correct++;
+      }
+    }
+
+    if (signals.streak) {
+      signalStats.streak.total++;
+
+      if (
+        signals.streak.prediction ===
+        actual
+      ) {
+        signalStats.streak.correct++;
+      }
+    }
+
+    if (signals.number) {
+      signalStats.number.total++;
+
+      if (
+        signals.number.prediction ===
+        actual
+      ) {
+        signalStats.number.correct++;
+      }
+    }
+
+    if (signals.structure) {
+      signalStats.structure.total++;
+
+      if (
+        signals.structure.prediction ===
+        actual
+      ) {
+        signalStats.structure.correct++;
+      }
+    }
+
+    if (signals.recent5) {
+      signalStats.recent5.total++;
+
+      if (
+        signals.recent5.prediction ===
+        actual
+      ) {
+        signalStats.recent5.correct++;
+      }
+    }
+
+    if (signals.recent10) {
+      signalStats.recent10.total++;
+
+      if (
+        signals.recent10.prediction ===
+        actual
+      ) {
+        signalStats.recent10.correct++;
+      }
     }
   }
 
   const modelAccuracy =
     modelTotal > 0
-      ? (modelCorrect / modelTotal) * 100
-      : 50;
+      ? modelCorrect / modelTotal
+      : 0;
 
-  // Adaptive weights
-  const adaptiveWeights = {};
+  const signalAccuracy = {};
 
-  for (const name of signalNames) {
+  Object.keys(signalStats).forEach(key => {
+    const item =
+      signalStats[key];
+
+    signalAccuracy[key] =
+      item.total > 0
+        ? item.correct / item.total
+        : 0;
+  });
+
+  const weights = {
+    ...BASE_WEIGHTS
+  };
+
+  Object.keys(weights).forEach(key => {
     const accuracy =
-      signalStats[name].accuracy;
+      signalAccuracy[key];
 
-    // 50% = 1x
-    // 75% = 1.5x
-    // 25% = 0.5x
-    let multiplier =
-      1 + (accuracy - 50) / 50;
+    if (
+      accuracy !== undefined &&
+      signalStats[key].total > 0
+    ) {
+      let multiplier =
+        0.5 + accuracy;
 
-    multiplier =
-      Math.max(
-        0.35,
-        Math.min(1.65, multiplier)
-      );
+      multiplier =
+        Math.max(
+          0.35,
+          Math.min(1.65, multiplier)
+        );
 
-    adaptiveWeights[name] =
-      Number(
-        (
-          BASE_WEIGHTS[name] *
-          multiplier
-        ).toFixed(3)
-      );
-  }
+      weights[key] =
+        BASE_WEIGHTS[key] *
+        multiplier;
+    }
+  });
 
   return {
     modelAccuracy:
-      Number(modelAccuracy.toFixed(2)),
-
-    signalPerformance:
-      signalStats,
-
-    adaptiveWeights
+      Number(
+        (modelAccuracy * 100)
+          .toFixed(2)
+      ),
+    signalAccuracy,
+    weights
   };
 }
 
-// ======================================================
-// GET ADAPTIVE WEIGHTS
-// ======================================================
+/* =========================================================
+   GET ADAPTIVE WEIGHTS
+========================================================= */
 
 async function getAdaptiveWeights(
   force = false
@@ -1063,56 +1075,58 @@ async function getAdaptiveWeights(
     now - adaptiveCache.createdAt <
       ADAPTIVE_CACHE_TTL
   ) {
-    return adaptiveCache;
+    return {
+      weights: adaptiveCache.weights,
+      performance:
+        adaptiveCache.performance
+    };
   }
 
-  const dbResults =
-    await WinGoResult.find({})
-      .sort({ createdAt: 1 })
-      .limit(HISTORY_LIMIT)
-      .lean();
-
   const history =
+    await getLast100Results();
+
+  const chronological =
     sortByIssue(
-      dbResults,
+      history,
       false
     );
 
   const performance =
     calculateAdaptivePerformance(
-      history
+      chronological
     );
 
   adaptiveCache = {
     weights:
-      performance.adaptiveWeights,
-
+      performance.weights,
     performance,
-
     createdAt: now
   };
 
-  return adaptiveCache;
+  return {
+    weights:
+      performance.weights,
+    performance
+  };
 }
 
-// ======================================================
-// MAIN PREDICTION
-// ======================================================
+/* =========================================================
+   CALCULATE CURRENT PREDICTION
+========================================================= */
 
 async function calculatePrediction() {
-  const dbResults =
-    await WinGoResult.find({})
-      .sort({ createdAt: -1 })
-      .limit(HISTORY_LIMIT)
-      .lean();
+  const history =
+    await getLast100Results();
 
-  if (dbResults.length < MIN_HISTORY) {
-    return null;
+  if (history.length < MIN_HISTORY) {
+    throw new Error(
+      `Not enough history. Need at least ${MIN_HISTORY}, currently have ${history.length}.`
+    );
   }
 
-  const history =
+  const chronological =
     sortByIssue(
-      dbResults,
+      history,
       false
     );
 
@@ -1121,105 +1135,288 @@ async function calculatePrediction() {
 
   const prediction =
     predictFromHistory(
-      history,
+      chronological,
       adaptive.weights
     );
 
   return {
     ...prediction,
-
     adaptive: {
-      enabled: true,
-
-      modelAccuracy:
+      performance:
         adaptive.performance
-          .modelAccuracy,
-
-      weights:
-        adaptive.weights,
-
-      signalPerformance:
-        adaptive.performance
-          .signalPerformance
     }
   };
 }
 
+/* =========================================================
+   PROCESS SOURCE RESULTS
+========================================================= */
 
-// ======================================================
-// SERVE NEW.HTML FROM PROJECT ROOT
-// ======================================================
+async function processSourceResults(list) {
+  if (!Array.isArray(list)) {
+    throw new Error(
+      "Source result list must be an array"
+    );
+  }
 
-app.get("/predict", (req, res) => {
-  res.sendFile(
-    path.join(__dirname, "..", "new.html")
-  );
-});
+  const validResults = [];
 
+  for (const item of list) {
+    const issueNumber =
+      item?.issueNumber ??
+      item?.issue ??
+      item?.period;
 
-app.get("/api/source-status", (req, res) => {
-  res.json({
-    success: true,
-    sourceAvailable: !sourceBlocked,
-    sourceBlocked,
-    lastError: lastSourceError,
-    lastErrorTime: lastSourceErrorTime,
-    message: sourceBlocked
-      ? "Live WinGo source is currently unavailable. Existing database history is being used."
-      : "WinGo source is available."
+    const rawNumber =
+      item?.number ??
+      item?.result;
+
+    if (
+      issueNumber === undefined ||
+      issueNumber === null
+    ) {
+      continue;
+    }
+
+    const number =
+      Number(rawNumber);
+
+    if (
+      !Number.isInteger(number) ||
+      number < 0 ||
+      number > 9
+    ) {
+      continue;
+    }
+
+    const result =
+      toTarget(number);
+
+    if (!result) {
+      continue;
+    }
+
+    validResults.push({
+      issueNumber:
+        String(issueNumber),
+      number,
+      result
+    });
+  }
+
+  if (validResults.length === 0) {
+    throw new Error(
+      "No valid results received from source"
+    );
+  }
+
+  /* =======================================================
+     REMOVE DUPLICATE ISSUES FROM SOURCE LIST
+  ======================================================= */
+
+  const uniqueMap = new Map();
+
+  for (const item of validResults) {
+    uniqueMap.set(
+      item.issueNumber,
+      item
+    );
+  }
+
+  const uniqueResults =
+    Array.from(
+      uniqueMap.values()
+    );
+
+  /* =======================================================
+     UPSERT ACTUAL RESULTS
+  ======================================================= */
+
+  const operations =
+    uniqueResults.map(item => ({
+      updateOne: {
+        filter: {
+          issueNumber:
+            item.issueNumber
+        },
+        update: {
+          $set: {
+            issueNumber:
+              item.issueNumber,
+            number:
+              item.number,
+            result:
+              item.result
+          }
+        },
+        upsert: true
+      }
+    }));
+
+  const bulkResult =
+    await WinGoResult.bulkWrite(
+      operations,
+      {
+        ordered: false
+      }
+    );
+
+  const newResults =
+    bulkResult.upsertedCount || 0;
+
+  /* =======================================================
+     RESOLVE EXISTING PREDICTIONS
+  ======================================================= */
+
+  const issueNumbers =
+    uniqueResults.map(
+      item => item.issueNumber
+    );
+
+  const pendingPredictions =
+    await Prediction.find({
+      issueNumber: {
+        $in: issueNumbers
+      },
+      status: "PENDING"
+    });
+
+  const resultMap = new Map();
+
+  uniqueResults.forEach(item => {
+    resultMap.set(
+      item.issueNumber,
+      item
+    );
   });
-});
 
+  for (
+    const prediction
+    of pendingPredictions
+  ) {
+    const actual =
+      resultMap.get(
+        String(prediction.issueNumber)
+      );
 
-// ======================================================
-// API - CURRENT PREDICTION
-// ======================================================
-
-app.get("/api/predict", async (req, res) => {
-  try {
-    const prediction =
-      await calculatePrediction();
-
-    if (!prediction) {
-      return res.status(400).json({
-        success: false,
-        message:
-          `Need at least ${MIN_HISTORY} results for prediction`
-      });
+    if (!actual) {
+      continue;
     }
 
+    prediction.actual =
+      actual.result;
+
+    prediction.actualResult =
+      actual.result;
+
+    prediction.actualNumber =
+      actual.number;
+
+    prediction.status =
+      prediction.prediction ===
+      actual.result
+        ? "WIN"
+        : "LOSS";
+
+    prediction.resolvedAt =
+      new Date();
+
+    await prediction.save();
+  }
+
+  /* =======================================================
+     KEEP ONLY LAST 100 ACTUAL RESULTS
+  ======================================================= */
+
+  await trimResultsToLimit();
+
+  if (newResults > 0) {
+    adaptiveCache = {
+      weights: null,
+      performance: null,
+      createdAt: 0
+    };
+  }
+
+  /* =======================================================
+     CREATE PREDICTION FOR NEXT ISSUE
+  ======================================================= */
+
+  const latestResults =
+    await getLast100Results();
+
+  if (
+    latestResults.length >=
+    MIN_HISTORY
+  ) {
     const latest =
-      await WinGoResult.findOne({})
-        .sort({ createdAt: -1 })
-        .lean();
-
-    if (!latest) {
-      return res.status(400).json({
-        success: false,
-        message: "No results available"
-      });
-    }
+      latestResults[0];
 
     const nextIssue =
       incrementIssueNumber(
         latest.issueNumber
       );
 
-    res.json({
-      success: true,
+    if (nextIssue) {
+      await savePredictionForIssue(
+        nextIssue
+      );
+    }
+  }
 
-      nextIssue,
+  await trimPredictionsToLimit();
 
-      latestResult: {
-        issueNumber:
-          latest.issueNumber,
+  lastIngestAt =
+    new Date();
 
-        number:
-          latest.number,
+  lastIngestCount =
+    uniqueResults.length;
 
-        result:
-          latest.result
-      },
+  lastSourceError = null;
+  lastSourceErrorTime = null;
+
+  return {
+    received:
+      list.length,
+    valid:
+      uniqueResults.length,
+    newResults,
+    latest:
+      sortByIssue(
+        uniqueResults,
+        true
+      )[0] || null
+  };
+}
+
+/* =========================================================
+   SAVE PREDICTION
+========================================================= */
+
+async function savePredictionForIssue(
+  issueNumber
+) {
+  if (!issueNumber) {
+    return null;
+  }
+
+  const existing =
+    await Prediction.findOne({
+      issueNumber:
+        String(issueNumber)
+    });
+
+  if (existing) {
+    return existing;
+  }
+
+  const prediction =
+    await calculatePrediction();
+
+  const doc =
+    await Prediction.create({
+      issueNumber:
+        String(issueNumber),
 
       prediction:
         prediction.prediction,
@@ -1233,58 +1430,283 @@ app.get("/api/predict", async (req, res) => {
       smallProbability:
         prediction.smallProbability,
 
-      historyUsed:
-        prediction.historyUsed,
+      status:
+        "PENDING",
 
-      patternInfo:
-        prediction.patternInfo,
+      actual:
+        null,
 
-      signals:
-        prediction.signals,
+      actualResult:
+        null,
 
-      adaptive:
-        prediction.adaptive
+      actualNumber:
+        null
     });
-  } catch (error) {
-    console.error(
-      "Prediction API error:",
-      error.message
-    );
 
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
+  await trimPredictionsToLimit();
+
+  return doc;
+}
+
+/* =========================================================
+   ROOT
+========================================================= */
+
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message:
+      "WinGo AI Predictor API is running",
+
+    endpoints: [
+      "/api/predict",
+      "/api/predictions",
+      "/api/results",
+      "/api/results/history",
+      "/api/ml-data",
+      "/api/backtest",
+      "/api/model-performance",
+      "/api/model-refresh",
+      "/api/source-status",
+      "/api/source-results"
+    ]
+  });
 });
 
-// ======================================================
-// SAVE PREDICTION
-// ======================================================
+/* =========================================================
+   SOURCE STATUS
+========================================================= */
 
-async function savePredictionForIssue(
-  issueNumber
-) {
-  try {
-    const existing =
-      await Prediction.findOne({
-        issueNumber
+app.get(
+  "/api/source-status",
+  (req, res) => {
+    res.json({
+      success: true,
+
+      sourceBlocked: false,
+
+      lastIngestAt,
+
+      lastIngestCount,
+
+      lastSourceError,
+
+      lastSourceErrorTime
+    });
+  }
+);
+
+/* =========================================================
+   SOURCE INGESTION
+========================================================= */
+
+/*
+   IMPORTANT:
+
+   Render ab WinGo API ko directly call nahi karega.
+
+   Browser/Vercel WinGo se data fetch karega
+   aur yahan POST karega.
+*/
+
+app.post(
+  "/api/source-results",
+  async (req, res) => {
+    try {
+      const list =
+        req.body?.list;
+
+      if (!Array.isArray(list)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Request body must contain an array named 'list'"
+        });
+      }
+
+      const result =
+        await processSourceResults(
+          list
+        );
+
+      return res.json({
+        success: true,
+        message:
+          "Source results processed successfully",
+        ...result
       });
 
-    if (existing) {
-      return existing;
+    } catch (error) {
+      console.error(
+        "SOURCE INGEST ERROR:",
+        error
+      );
+
+      lastSourceError =
+        error.message;
+
+      lastSourceErrorTime =
+        new Date();
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to process source results",
+        error:
+          error.message
+      });
     }
+  }
+);
 
-    const prediction =
-      await calculatePrediction();
+/* =========================================================
+   RESULTS API
+========================================================= */
 
-    if (!prediction) {
-      return null;
+app.get(
+  "/api/results",
+  async (req, res) => {
+    try {
+      const results =
+        await getLast100Results();
+
+      res.json({
+        success: true,
+        count:
+          results.length,
+        results
+      });
+
+    } catch (error) {
+      console.error(
+        "RESULTS ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        message:
+          error.message
+      });
     }
+  }
+);
 
-    const newPrediction =
-      await Prediction.create({
-        issueNumber,
+/* =========================================================
+   RESULTS HISTORY ASCENDING
+========================================================= */
+
+app.get(
+  "/api/results/history",
+  async (req, res) => {
+    try {
+      const results =
+        await getLast100Results();
+
+      const history =
+        sortByIssue(
+          results,
+          false
+        );
+
+      res.json({
+        success: true,
+        count:
+          history.length,
+        results:
+          history
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message:
+          error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   ML DATA
+========================================================= */
+
+app.get(
+  "/api/ml-data",
+  async (req, res) => {
+    try {
+      const results =
+        await getLast100Results();
+
+      const history =
+        sortByIssue(
+          results,
+          false
+        );
+
+      const data =
+        history.map(item => ({
+          issueNumber:
+            item.issueNumber,
+
+          number:
+            item.number,
+
+          result:
+            item.result
+        }));
+
+      res.json({
+        success: true,
+        count:
+          data.length,
+        data
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message:
+          error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   PREDICTION API
+========================================================= */
+
+app.get(
+  "/api/predict",
+  async (req, res) => {
+    try {
+      const prediction =
+        await calculatePrediction();
+
+      const latestResults =
+        await getLast100Results();
+
+      const latest =
+        latestResults[0];
+
+      let nextIssue =
+        null;
+
+      if (latest) {
+        nextIssue =
+          incrementIssueNumber(
+            latest.issueNumber
+          );
+      }
+
+      res.json({
+        success: true,
+
+        nextIssue,
+
+        latestResult:
+          latest || null,
 
         prediction:
           prediction.prediction,
@@ -1298,221 +1720,154 @@ async function savePredictionForIssue(
         smallProbability:
           prediction.smallProbability,
 
-        actualResult: null,
+        historyUsed:
+          prediction.historyUsed,
 
-        actualNumber: null,
+        patternInfo:
+          prediction.patternInfo,
 
-        status: "PENDING"
+        signals:
+          prediction.signals,
+
+        adaptive:
+          prediction.adaptive
       });
 
-    console.log(
-      `Prediction saved: ${issueNumber} | ${prediction.prediction} | ${prediction.confidence}%`
-    );
-
-    // Keep only latest 100 predictions
-    await trimPredictionsToLimit();
-
-    return newPrediction;
-  } catch (error) {
-    console.error(
-      "Prediction save error:",
-      error.message
-    );
-
-    return null;
-  }
-}
-
-// ======================================================
-// RESOLVE PREDICTION
-// ======================================================
-
-async function resolvePrediction(
-  issueNumber,
-  actualNumber,
-  actualResult
-) {
-  try {
-    const prediction =
-      await Prediction.findOne({
-        issueNumber
-      });
-
-    if (!prediction) {
-      return;
-    }
-
-    if (prediction.status !== "PENDING") {
-      return;
-    }
-
-    const actual =
-      actualResult ||
-      toTarget(actualNumber);
-
-    const status =
-      prediction.prediction === actual
-        ? "WIN"
-        : "LOSS";
-
-    prediction.actualResult =
-      actual;
-
-    prediction.actualNumber =
-      actualNumber;
-
-    prediction.status =
-      status;
-
-    prediction.resolvedAt =
-      new Date();
-
-    await prediction.save();
-
-    console.log(
-      `Prediction resolved: ${issueNumber} | ${prediction.prediction} | Actual: ${actual} | ${status}`
-    );
-  } catch (error) {
-    console.error(
-      "Resolve prediction error:",
-      error.message
-    );
-  }
-}
-
-// ======================================================
-// API - PREDICTIONS
-// ======================================================
-
-app.get("/api/predictions", async (req, res) => {
-  try {
-    const predictions =
-      await Prediction.find({})
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean();
-
-    const resolved =
-      predictions.filter(
-        (p) =>
-          p.status === "WIN" ||
-          p.status === "LOSS"
+    } catch (error) {
+      console.error(
+        "PREDICTION ERROR:",
+        error
       );
 
-    const wins =
-      resolved.filter(
-        (p) => p.status === "WIN"
-      ).length;
-
-    const losses =
-      resolved.filter(
-        (p) => p.status === "LOSS"
-      ).length;
-
-    const winRate =
-      resolved.length > 0
-        ? (wins / resolved.length) * 100
-        : 0;
-
-    res.json({      success: true,
-
-      count: predictions.length,
-
-      predictions,
-
-      stats: {
-        total: predictions.length,
-        resolved: resolved.length,
-        wins,
-        losses,
-
-        pending:
-          predictions.filter(
-            (p) => p.status === "PENDING"
-          ).length,
-
-        winRate:
-          Number(winRate.toFixed(2))
-      }
-    });
-  } catch (error) {
-    console.error(
-      "Predictions API error:",
-      error.message
-    );
-
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-// ======================================================
-// API - BACKTEST
-// ======================================================
-
-app.get("/api/backtest", async (req, res) => {
-  try {
-    const dbResults =
-      await WinGoResult.find({})
-        .sort({ createdAt: 1 })
-        .limit(HISTORY_LIMIT)
-        .lean();
-
-    const history =
-      sortByIssue(
-        dbResults,
-        false
-      );
-
-    if (
-      history.length <
-      MIN_HISTORY + 1
-    ) {
-      return res.status(400).json({
+      res.status(500).json({
         success: false,
         message:
-          `Need at least ${MIN_HISTORY + 1} results for backtest`
+          error.message
       });
     }
+  }
+);
 
-    const performance =
-      calculateAdaptivePerformance(
-        history
+/* =========================================================
+   LAST 10 PREDICTIONS
+========================================================= */
+
+app.get(
+  "/api/predictions",
+  async (req, res) => {
+    try {
+      const all =
+        await Prediction.find({})
+          .lean();
+
+      const predictions =
+        sortByIssue(
+          all,
+          true
+        ).slice(0, 10);
+
+      const wins =
+        predictions.filter(
+          item =>
+            item.status === "WIN"
+        ).length;
+
+      const losses =
+        predictions.filter(
+          item =>
+            item.status === "LOSS"
+        ).length;
+
+      const pending =
+        predictions.filter(
+          item =>
+            item.status === "PENDING"
+        ).length;
+
+      const completed =
+        wins + losses;
+
+      const winRate =
+        completed > 0
+          ? Number(
+              (
+                (wins /
+                  completed) *
+                100
+              ).toFixed(2)
+            )
+          : 0;
+
+      res.json({
+        success: true,
+
+        predictions,
+
+        stats: {
+          wins,
+          losses,
+          pending,
+          winRate
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "PREDICTIONS ERROR:",
+        error
       );
 
-    res.json({
-      success: true,
-
-      historyUsed:
-        history.length,
-
-      modelAccuracy:
-        performance.modelAccuracy,
-
-      signalPerformance:
-        performance.signalPerformance,
-
-      adaptiveWeights:
-        performance.adaptiveWeights
-    });
-  } catch (error) {
-    console.error(
-      "Backtest error:",
-      error.message
-    );
-
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+      res.status(500).json({
+        success: false,
+        message:
+          error.message
+      });
+    }
   }
-});
+);
 
-// ======================================================
-// API - MODEL PERFORMANCE
-// ======================================================
+/* =========================================================
+   BACKTEST
+========================================================= */
+
+app.get(
+  "/api/backtest",
+  async (req, res) => {
+    try {
+      const results =
+        await getLast100Results();
+
+      const history =
+        sortByIssue(
+          results,
+          false
+        );
+
+      const performance =
+        calculateAdaptivePerformance(
+          history
+        );
+
+      res.json({
+        success: true,
+        historyUsed:
+          history.length,
+        performance
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message:
+          error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   MODEL PERFORMANCE
+========================================================= */
 
 app.get(
   "/api/model-performance",
@@ -1523,391 +1878,60 @@ app.get(
 
       res.json({
         success: true,
-
-        modelAccuracy:
+        performance:
           adaptive.performance
-            .modelAccuracy,
-
-        signalPerformance:
-          adaptive.performance
-            .signalPerformance,
-
-        adaptiveWeights:
-          adaptive.weights
       });
-    } catch (error) {
-      console.error(
-        "Model performance error:",
-        error.message
-      );
 
+    } catch (error) {
       res.status(500).json({
         success: false,
-        message: error.message
+        message:
+          error.message
       });
     }
   }
 );
 
-
-
-app.get("/api/debug-ip", async (req, res) => {
-  try {
-    const response = await fetch("https://api.ipify.org?format=json");
-    const data = await response.json();
-
-    res.json({
-      success: true,
-      renderOutboundIP: data.ip
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// ======================================================
-// API - FORCE MODEL REFRESH
-// ======================================================
+/* =========================================================
+   MODEL REFRESH
+========================================================= */
 
 app.get(
   "/api/model-refresh",
   async (req, res) => {
     try {
-      const adaptive =
-        await getAdaptiveWeights(true);
-
-      res.json({
-        success: true,
-
-        message:
-          "Adaptive model refreshed",
-
-        modelAccuracy:
-          adaptive.performance
-            .modelAccuracy,
-
-        weights:
-          adaptive.weights,
-
-        signalPerformance:
-          adaptive.performance
-            .signalPerformance
-      });
-    } catch (error) {
-      console.error(
-        "Model refresh error:",
-        error.message
-      );
-
-      res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    }
-  }
-);
-
-// ======================================================
-// FETCH SOURCE RESULTS
-// ======================================================
-
-let sourceBlocked = false;
-let lastSourceError = null;
-let lastSourceErrorTime = null;
-
-async function fetchSourceResults() {
-  try {
-    const url = `${SOURCE_API}?t=${Date.now()}`;
-
-    console.log("====================================");
-    console.log("Fetching WinGo source:", url);
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json, text/plain, */*",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        Referer: "https://draw.ar-lottery01.com/",
-        Origin: "https://draw.ar-lottery01.com"
-      }
-    });
-
-    console.log("SOURCE STATUS:", response.status);
-    console.log(
-      "SOURCE CONTENT-TYPE:",
-      response.headers.get("content-type")
-    );
-
-    console.log(
-      "SOURCE SERVER:",
-      response.headers.get("server")
-    );
-
-    console.log(
-      "SOURCE LOCATION:",
-      response.headers.get("location")
-    );
-
-    const responseText = await response.text();
-
-    console.log(
-      "SOURCE RESPONSE BODY:",
-      responseText.substring(0, 1000)
-    );
-
-    console.log("====================================");
-
-    if (response.status === 403) {
-      sourceBlocked = true;
-      lastSourceError = "Source API returned 403 Forbidden";
-      lastSourceErrorTime = new Date();
-
-      console.warn(
-        "WinGo source returned 403."
-      );
-
-      return [];
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `Source API error: ${response.status}`
-      );
-    }
-
-    let json;
-
-    try {
-      json = JSON.parse(responseText);
-    } catch (error) {
-      throw new Error(
-        "Source returned invalid JSON"
-      );
-    }
-
-    sourceBlocked = false;
-    lastSourceError = null;
-
-    const list =
-      json?.data?.list ||
-      json?.data ||
-      json?.list ||
-      [];
-
-    console.log(
-      `Received ${list.length} results`
-    );
-
-    return list;
-
-  } catch (error) {
-
-    lastSourceError = error.message;
-    lastSourceErrorTime = new Date();
-
-    console.warn(
-      "WinGo source temporarily unavailable:",
-      error.message
-    );
-
-    return [];
-  }
-}
-
-// ======================================================
-// COLLECT RESULTS
-// ======================================================
-
-async function collectResults() {
-  try {
-    const list =
-      await fetchSourceResults();
-
-    if (!list.length) {
-      return;
-    }
-
-    const operations = [];
-
-    const validResults = [];
-
-    for (const item of list) {
-      const issueNumber =
-        item.issueNumber ??
-        item.issue ??
-        item.period;
-
-      const rawNumber =
-        item.number ??
-        item.result;
-
-      const number =
-        Number(rawNumber);
-
-      if (
-        !issueNumber ||
-        Number.isNaN(number) ||
-        number < 0 ||
-        number > 9
-      ) {
-        continue;
-      }
-
-      const result =
-        toTarget(number);
-
-      if (!result) {
-        continue;
-      }
-
-      validResults.push({
-        issueNumber:
-          String(issueNumber),
-
-        number,
-
-        result
-      });
-
-      operations.push({
-        updateOne: {
-          filter: {
-            issueNumber:
-              String(issueNumber)
-          },
-
-          update: {
-            $set: {
-              issueNumber:
-                String(issueNumber),
-
-              number,
-
-              result
-            }
-          },
-
-          upsert: true
-        }
-      });
-    }
-
-    if (!operations.length) {
-      console.log(
-        "No valid results found"
-      );
-
-      return;
-    }
-
-    const bulkResult =
-      await WinGoResult.bulkWrite(
-        operations,
-        {
-          ordered: false
-        }
-      );
-
-    const newResults =
-      bulkResult.upsertedCount || 0;
-
-    console.log(
-      `New results added: ${newResults}`
-    );
-
-    // Resolve predictions for newly received results
-    for (const item of validResults) {
-      await resolvePrediction(
-        item.issueNumber,
-        item.number,
-        item.result
-      );
-    }
-
-    // Keep actual results <= 100
-    await trimResultsToLimit();
-
-    // Reset adaptive cache when new data arrives
-    if (newResults > 0) {
       adaptiveCache = {
         weights: null,
         performance: null,
         createdAt: 0
       };
-    }
 
-    const allResults =
-      await WinGoResult.find({})
-        .sort({ createdAt: -1 })
-        .limit(HISTORY_LIMIT)
-        .lean();
-
-    console.log(
-      `Database history: ${allResults.length}/${HISTORY_LIMIT}`
-    );
-
-    if (
-      allResults.length >= MIN_HISTORY
-    ) {
-      const latest =
-        sortByIssue(
-          allResults,
+      const adaptive =
+        await getAdaptiveWeights(
           true
-        )[0];
+        );
 
-      if (latest) {
-        const nextIssue =
-          incrementIssueNumber(
-            latest.issueNumber
-          );
+      res.json({
+        success: true,
+        message:
+          "Model refreshed",
+        performance:
+          adaptive.performance
+      });
 
-        if (nextIssue) {
-          await savePredictionForIssue(
-            nextIssue
-          );
-        }
-      }
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message:
+          error.message
+      });
     }
-
-    // Final prediction cleanup
-    await trimPredictionsToLimit();
-  } catch (error) {
-    console.error(
-      "Collector error:",
-      error.message
-    );
   }
-}
+);
 
-// ======================================================
-// ROOT API
-// ======================================================
-
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message:
-      "WinGo 1M AI Predictor API is running",
-    endpoints: [
-      "/api/results",
-      "/api/results/history",
-      "/api/ml-data",
-      "/api/predict",
-      "/api/predictions",
-      "/api/backtest",
-      "/api/model-performance",
-      "/api/model-refresh"
-    ]
-  });
-});
-
-// ======================================================
-// MONGODB CONNECTION
-// ======================================================
+/* =========================================================
+   DATABASE CONNECTION
+========================================================= */
 
 mongoose
   .connect(process.env.MONGO_URI)
@@ -1916,41 +1940,37 @@ mongoose
       "MongoDB connected successfully"
     );
 
-    // ================================================
-    // CLEAN OLD DATA ON SERVER START
-    // ================================================
-
     await trimResultsToLimit();
+
     await trimPredictionsToLimit();
 
-    // ================================================
-    // SERVER START
-    // ================================================
-
-    app.listen(PORT, () => {
-      console.log(
-        `Server running on port ${PORT}`
-      );
-    });
-
-    // ================================================
-    // FIRST COLLECTION
-    // ================================================
-
-    await collectResults();
-
-    // ================================================
-    // AUTO COLLECT EVERY 10 SECONDS
-    // ================================================
-
-    setInterval(
-      collectResults,
-      10000
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `Server running on port ${PORT}`
+        );
+      }
     );
+
+    /*
+      IMPORTANT:
+
+      Yahan se old:
+
+      collectResults()
+      setInterval(collectResults, 10000)
+
+      REMOVE kiya gaya hai.
+
+      Render ab WinGo ko directly call nahi karega.
+    */
   })
-  .catch((error) => {
+  .catch(error => {
     console.error(
-      "MongoDB connection error:",
-      error.message
+      "MongoDB connection failed:",
+      error
     );
+
+    process.exit(1);
   });
