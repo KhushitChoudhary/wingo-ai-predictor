@@ -1549,6 +1549,25 @@ app.get(
   }
 );
 
+
+
+app.get("/api/debug-ip", async (req, res) => {
+  try {
+    const response = await fetch("https://api.ipify.org?format=json");
+    const data = await response.json();
+
+    res.json({
+      success: true,
+      renderOutboundIP: data.ip
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ======================================================
 // API - FORCE MODEL REFRESH
 // ======================================================
