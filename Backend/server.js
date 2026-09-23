@@ -1603,14 +1603,44 @@ async function fetchSourceResults() {
   try {
     const url = `${SOURCE_API}?t=${Date.now()}`;
 
+    console.log("====================================");
+    console.log("Fetching WinGo source:", url);
+
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        Accept: "application/json,text/plain,*/*",
+        Accept: "application/json, text/plain, */*",
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Referer: "https://draw.ar-lottery01.com/",
+        Origin: "https://draw.ar-lottery01.com"
       }
     });
+
+    console.log("SOURCE STATUS:", response.status);
+    console.log(
+      "SOURCE CONTENT-TYPE:",
+      response.headers.get("content-type")
+    );
+
+    console.log(
+      "SOURCE SERVER:",
+      response.headers.get("server")
+    );
+
+    console.log(
+      "SOURCE LOCATION:",
+      response.headers.get("location")
+    );
+
+    const responseText = await response.text();
+
+    console.log(
+      "SOURCE RESPONSE BODY:",
+      responseText.substring(0, 1000)
+    );
+
+    console.log("====================================");
 
     if (response.status === 403) {
       sourceBlocked = true;
@@ -1618,17 +1648,27 @@ async function fetchSourceResults() {
       lastSourceErrorTime = new Date();
 
       console.warn(
-        "WinGo source is currently unavailable (403). Keeping existing database history."
+        "WinGo source returned 403."
       );
 
       return [];
     }
 
     if (!response.ok) {
-      throw new Error(`Source API error: ${response.status}`);
+      throw new Error(
+        `Source API error: ${response.status}`
+      );
     }
 
-    const json = await response.json();
+    let json;
+
+    try {
+      json = JSON.parse(responseText);
+    } catch (error) {
+      throw new Error(
+        "Source returned invalid JSON"
+      );
+    }
 
     sourceBlocked = false;
     lastSourceError = null;
@@ -1639,10 +1679,14 @@ async function fetchSourceResults() {
       json?.list ||
       [];
 
-    console.log(`Received ${list.length} results`);
+    console.log(
+      `Received ${list.length} results`
+    );
 
     return list;
+
   } catch (error) {
+
     lastSourceError = error.message;
     lastSourceErrorTime = new Date();
 
